@@ -1,9 +1,0 @@
-package com.axa.dm.autouw;
-
-import java.lang.Number;
-
-rule "draft"
-	dialect "mvel"
-	when
-	then
-end
