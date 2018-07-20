@@ -1,0 +1,15 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "mapClassCode - Application (substandard)"
+	dialect "mvel"
+	when
+		$app : Application( $classCode : classCode, $planCode : planCode, standardClass == null )
+		StandardRateObject( planCode == $planCode )
+		not (StandardRateObject( classCode == $classCode , planCode == $planCode )) 
+	then
+		modify( $app ) {
+				setStandardClass( false )
+		}
+end

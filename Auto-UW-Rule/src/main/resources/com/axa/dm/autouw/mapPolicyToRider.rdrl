@@ -1,0 +1,15 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "mapPolicyToRider"
+	dialect "mvel"
+	when
+		Policy( $policyNo : policyNo, $currency : currency, $dateofSubmission : dateofSubmission)
+		$policyRider : PolicyRider( policyNo == $policyNo , currency == null )
+	then
+		modify( $policyRider ) {
+				setCurrency( $currency ), 
+				setDateofSubmission( $dateofSubmission )
+		}
+end

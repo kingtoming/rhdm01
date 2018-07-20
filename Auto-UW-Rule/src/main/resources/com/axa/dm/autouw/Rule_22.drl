@@ -1,0 +1,79 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.util.Date;
+
+rule "Rule_22_Insured"
+	dialect "java"
+	when
+		$processObject : ProcessObject( rule22InsuredProcessed == false )
+		
+		Insured( $insuredfullName : fullName != null )
+		Fraud( $policyNo : policyNo != null , $suspiciousFlag: suspiciousFlag != null, $suspiciousFlag in ( "Y", "PF", "AF" ) )
+		Policy( role == "INS" , policyNo == $policyNo )
+
+		$resultObj : Result( $individualResultList : individualResult)
+	    $ruleObj : RuleObject( ruleNo == "22" )
+	    $individualResult: IndividualResult( ruleNo == "22" )
+	then
+		List failedReasons = new ArrayList<String>();
+		failedReasons.add("Fraud flag " + $suspiciousFlag + " found in previous policy " + $policyNo + " of  " + $insuredfullName + " , the case is suspicious.");
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+		$insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        
+        
+        update($individualResult);
+        $processObject.setRule22InsuredProcessed(true);
+        update($processObject);
+end
+
+rule "Rule_22_Owner"
+	dialect "java"
+	when
+		$processObject : ProcessObject( rule22OwnerProcessed == false )
+		
+		Owner( $ownerfullName : fullName != null )
+		Fraud( $policyNo : policyNo != null , $suspiciousFlag: suspiciousFlag != null, $suspiciousFlag in ( "Y", "PF", "AF" ) )
+		Policy( role == "OWN" , policyNo == $policyNo )
+
+		$resultObj : Result( $individualResultList : individualResult)
+	    $ruleObj : RuleObject( ruleNo == "22" )
+	    $individualResult: IndividualResult( ruleNo == "22" )
+	then
+		List failedReasons = new ArrayList<String>();
+		failedReasons.add("Fraud flag " + $suspiciousFlag + " found in previous policy " + $policyNo + " of  " + $ownerfullName + " , the case is suspicious.");
+		OwnerIndividual $ownerIndividual = new OwnerIndividual();
+		$ownerIndividual.setFailedReasons(failedReasons);
+		$ownerIndividual.setDecision("Fail");
+        $individualResult.setOwnerIndividual($ownerIndividual);
+    
+        update($individualResult);
+        $processObject.setRule22OwnerProcessed(true);
+        update($processObject);
+end
+
+rule "Rule_22 final"
+    dialect "java"
+    when
+        $processObj : ProcessObject( (rule22InsuredProcessed == true || rule22OwnerProcessed == true) , rule22FinalProcessed == false )
+        $individualResult : IndividualResult(ruleNo == "22")
+        $ruleObj : RuleObject( ruleNo == "22" )
+        Result( $individualResultList : individualResult)
+        CurrentApplication ($formId : formId)
+    then
+    
+		$individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        
+        $individualResultList.add($individualResult);
+        $processObj.setRule22FinalProcessed(true);
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+    end

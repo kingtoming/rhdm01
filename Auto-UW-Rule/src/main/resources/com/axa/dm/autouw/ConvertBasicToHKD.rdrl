@@ -1,0 +1,15 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "ConvertBasicToHKD"
+	dialect "mvel"
+	when
+		CurrentApplication( $currency : currency)
+		ExchangeRateObject( fromCurrency == $currency , toCurrency == "HKD" , $exchangeRate : exchangeRate)
+		$basic : Basic( sumInsuredHkd == null , $sumInsured : sumInsured)
+	then
+		modify( $basic ) {
+				setSumInsuredHkd( $sumInsured.multiply($exchangeRate) )
+		}
+end

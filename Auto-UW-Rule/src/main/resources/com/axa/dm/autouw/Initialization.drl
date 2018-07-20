@@ -1,0 +1,212 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+
+rule "Extract agent"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $agent : agent)
+	then
+	    insert($agent);
+        // update($processObject);
+end
+
+rule "Extract application"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $application : application)
+		($applicationObj : Application( ) from $application)
+	then
+	    $applicationObj.setRegularPremium($applicationObj.modalRegularPremiumexcludeTopup.add($applicationObj.topupPremium));
+	    insert($applicationObj);
+        // update($processObject);
+end
+
+rule "Extract application rider"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $applicationRider : applicationRider)
+		($applicationRiderObj : ApplicationRider( ) from $applicationRider)
+	then
+	    insert($applicationRiderObj);
+        // update($processObject);
+end
+
+rule "Extract claim"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $claim : claim)
+		($claimObj : Claim() from $claim)
+	then
+	    insert($claimObj);
+        // update($processObject);
+end
+
+rule "Extract current application"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $currentApplication : currentApplication)
+	then
+	    insert($currentApplication);
+        // update($processObject);
+end
+
+rule "Extract fraud"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $fraud : fraud)
+		($fraudObj : Fraud() from $fraud)
+	then
+	    insert($fraudObj);
+        // update($processObject);
+end
+
+rule "Extract policy"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $policy : policy)
+		($policyObj : Policy() from $policy)
+	then
+	    $policyObj.setRegularPremium($policyObj.modalRegularPremiumexcludeTopup.add($policyObj.topupPremium));
+	    insert($policyObj);
+        // update($processObject);
+end
+
+rule "Extract policy change"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $policyChange : policyChange)
+		($policyChangeObj : PolicyChange() from $policyChange)
+	then
+	    insert($policyChangeObj);
+        // update($processObject);
+end
+
+rule "Extract policy rider"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $policyRider : policyRider)
+		($policyRiderObj : PolicyRider() from $policyRider)
+	then
+	    insert($policyRiderObj);
+        // update($processObject);
+end
+
+rule "Extract special case"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $specialCase : specialCase)
+		($specialCaseObj : SpecialCase() from $specialCase)
+	then
+	    insert($specialCaseObj);
+        // update($processObject);
+end
+
+rule "Extract insured"
+    lock-on-active true
+	dialect "java"
+	when
+		$processObject : ProcessObject( $insured : currentApplication.insured.get(0), $currentApplication : currentApplication)
+	then
+	    $insured.setAnnualIncome(new BigDecimal("12").multiply($insured.getMonthlyIncomeApp()));
+	    $insured.setAnnualExpense(new BigDecimal("12").multiply($insured.getMonthlyExpense()));
+	    $insured.setAnnualIncomeEcna(new BigDecimal("12").multiply($insured.getMonthlyIncome()));
+	    $insured.setAnnualDisposableIncome($insured.getAnnualIncomeEcna().subtract($insured.getAnnualExpense()));
+	    
+	    if ("MCP".equals($currentApplication.getPolicyLocationCode().trim().toUpperCase())){
+	        $insured.setResidencyCal("CHINA");
+	    } else if ("".equals($currentApplication.getPolicyLocationCode().trim().toUpperCase())) {
+	        $insured.setResidencyCal("HONG KONG");
+	    } else {
+	        $insured.setResidencyCal("OVERSEAS");
+	    }
+	    
+	    insert($insured);
+        // update($processObject);
+end
+
+rule "Extract owner"
+    lock-on-active true
+	dialect "java"
+	when
+	    $processObject : ProcessObject( $owner : currentApplication.owner.get(0))
+	then
+	    $owner.setAnnualIncome(new BigDecimal("12").multiply($owner.getMonthlyIncomeApp()));
+	    $owner.setAnnualExpense(new BigDecimal("12").multiply($owner.getMonthlyExpense()));
+	    $owner.setAnnualIncomeEcna(new BigDecimal("12").multiply($owner.getMonthlyIncome()));
+	    $owner.setAnnualDisposableIncome($owner.getAnnualIncomeEcna().subtract($owner.getAnnualExpense()));
+	    
+	    if (!"HONG KONG".equals($owner.getCountryofResidency().trim().toUpperCase()) && !"CHINA".equals($owner.getCountryofResidency().trim().toUpperCase())){
+	        $owner.setResidencyCal("OVERSEAS");
+	    } else {
+	        $owner.setResidencyCal($owner.getCountryofResidency().trim().toUpperCase());
+	    }
+	    insert($owner);
+end
+
+rule "Extract basic"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $basicObj : currentApplication.basic.get(0))
+	then
+	    $basicObj.setRegularPremium($basicObj.modalRegularPremiumExcludeTopup.add($basicObj.topupPremium));
+	    insert($basicObj);
+        // update($processObject);
+end
+
+rule "Extract Beneficiary"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $beneficiaries : currentApplication.beneficiaries)
+		($beneficiariesObj : Beneficiary( ) from $beneficiaries)
+	then
+	    insert($beneficiariesObj);
+        // update($processObject);
+end
+
+rule "Extract Special Field"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $specialField : currentApplication.specialField)
+		($specialFieldObj : SpecialField( ) from $specialField)
+	then
+	    insert($specialFieldObj);
+        // update($processObject);
+end
+
+rule "Extract rider"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$processObject : ProcessObject( $riders : currentApplication.rider)
+	    ($riderObj : Rider( ) from $riders)
+	then
+	    insert($riderObj);
+        // update($processObject);
+end
+
+rule "Init result"
+    lock-on-active true
+	dialect "mvel"
+	when
+		$resultObj : Result()
+	then
+	    $resultObj.setIndividualResult(new ArrayList());
+	    update($resultObj);
+        // update($processObject);
+end

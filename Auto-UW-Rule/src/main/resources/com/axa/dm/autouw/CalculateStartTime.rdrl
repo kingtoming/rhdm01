@@ -1,0 +1,17 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "CalculateStartTime"
+	dialect "java"
+	lock-on-active true
+	when
+		$processObj : ProcessObject( )
+	then
+		java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("dd-MMM-yyyy");
+		modify( $processObj ) {
+				setStartTime( new java.util.Date() )
+		}
+		Utils.logging("Process Start");
+		Utils.loggingDebug($processObj.toJson());
+end

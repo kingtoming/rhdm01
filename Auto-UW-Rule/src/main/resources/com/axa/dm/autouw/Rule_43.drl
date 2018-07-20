@@ -1,0 +1,112 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.util.Date;
+
+rule "Rule_43_Insured"
+	dialect "java"
+	when
+		$processObj : ProcessObject( rule43InsuredProcessed == false )
+		
+		$insured: Insured( ($occupation: occupationName.toLowerCase() == "retiree" && age < 50) || ($occupation.toLowerCase() == "student" && age > 25) )
+
+		$resultObj : Result( $individualResultList : individualResult)
+	    $ruleObj : RuleObject( ruleNo == "43" )
+	    $individualResult: IndividualResult( ruleNo == "43" )
+	then
+		// List failedReasons = new ArrayList<String>();
+		// failedReasons.add("");
+
+		List otherDetails = new ArrayList<OtherDetailObj>();
+
+		OtherDetailObj o = new OtherDetailObj();
+		o.setName("Occupation");
+		o.setValue($insured.getOccupationName());
+		otherDetails.add(o);
+		
+		OtherDetailObj o2 = new OtherDetailObj();
+		o2.setName("Age");
+		o2.setValue($insured.getAge().toString());
+		otherDetails.add(o2);
+
+		OtherDetailObj o3 = new OtherDetailObj();
+		o3.setName("DOB");
+		o3.setValue($insured.getDob());
+		otherDetails.add(o3);
+
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+		//$insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+        $insuredIndividual.setOtherDetails(otherDetails);
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        
+        update($individualResult);
+        $processObj.setRule43InsuredProcessed(true);
+        update($processObj);
+end
+
+rule "Rule_43_Owner"
+	dialect "java"
+	when
+		$processObj : ProcessObject( rule43OwnerProcessed == false )
+		
+		$owner: Owner( ($occupation: occupationName.toLowerCase() == "retiree" && age < 50) || ($occupation.toLowerCase() == "student" && age > 25) )
+
+		$resultObj : Result( $individualResultList : individualResult)
+	    $ruleObj : RuleObject( ruleNo == "43" )
+	    $individualResult: IndividualResult( ruleNo == "43" )
+	then
+		// List failedReasons = new ArrayList<String>();
+		// failedReasons.add("");
+		
+		List otherDetails = new ArrayList<OtherDetailObj>();
+
+		OtherDetailObj o = new OtherDetailObj();
+		o.setName("Occupation");
+		o.setValue($owner.getOccupationName());
+		otherDetails.add(o);
+		
+		OtherDetailObj o2 = new OtherDetailObj();
+		o2.setName("Age");
+		o2.setValue($owner.getAge().toString());
+		otherDetails.add(o2);
+
+		OtherDetailObj o3 = new OtherDetailObj();
+		o3.setName("DOB");
+		o3.setValue($owner.getDob());
+		otherDetails.add(o3);
+
+		OwnerIndividual $ownerIndividual = new OwnerIndividual();
+		//$ownerIndividual.setFailedReasons(failedReasons);
+		$ownerIndividual.setDecision("Fail");
+		$ownerIndividual.setOtherDetails(otherDetails);
+        $individualResult.setOwnerIndividual($ownerIndividual);
+    
+        update($individualResult);
+        $processObj.setRule43OwnerProcessed(true);
+        update($processObj);
+end
+
+rule "Rule_43 final"
+    dialect "java"
+    when
+        $processObj : ProcessObject( (rule43InsuredProcessed == true || rule43OwnerProcessed == true) , rule43FinalProcessed == false )
+        $individualResult : IndividualResult(ruleNo == "43")
+        $ruleObj : RuleObject( ruleNo == "43" )
+        Result( $individualResultList : individualResult)
+        CurrentApplication ($formId : formId)
+    then
+    
+		$individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        
+        $individualResultList.add($individualResult);
+        $processObj.setRule43FinalProcessed(true);
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+    end

@@ -1,0 +1,14 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "mapClassCode - PolicyRider"
+	dialect "mvel"
+	when
+		$policyRider : PolicyRider( $planCode : planCode, $classCode : classCode, standardClass == null )
+		StandardRateObject( classCode == $classCode , planCode == $planCode )
+	then
+		modify( $policyRider ) {
+				setStandardClass( true )
+		}
+end

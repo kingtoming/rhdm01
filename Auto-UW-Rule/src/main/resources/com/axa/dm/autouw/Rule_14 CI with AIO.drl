@@ -1,0 +1,291 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Date;
+
+rule "Rule_14 CI with AIO"
+          dialect "java"
+          when
+                   $processObj : ProcessObject( rule14Processed == false, $policyList : policy, $applicationList : application, $policyRiderList : policyRider, $appRiderList : applicationRider)
+                   $insured : Insured( $maxLifeSumInsured : ciAioMaxSiUsd != null )
+                   ExchangeRateObject( fromCurrency == "HKD", toCurrency == "USD", $exchangeRate : exchangeRate)
+                    CurrentApplication ($formId : formId, $riderList : rider)
+                   exists( 
+                       Basic( 
+                           productType != null, isValidProduct(
+                                            "AIO"
+                                            ) 
+                        ) 
+                        or 
+                        Rider( 
+                            productType != null,isValidProduct(
+                                           "AIO"
+                            ) 
+                        )
+                    )
+                    
+                  //************ Current Application *****************
+                  $totalBasicSumInsured : Number( ) from accumulate ( 
+                            Basic( $basicSumInsured : sumInsuredHkd != null,productType != null
+                                ,isValidProduct(
+                                    "LIP","SLI","ELI","SML","SMR","SKI","CI10","HMI","ES","ESB","HA","ESA","HB","ESB2","AIO"
+                                    ,"HA II","HB II","ESA II","ESB III"
+                                ) 
+                            ),
+                             sum($basicSumInsured.multiply($exchangeRate))) // current application with basic
+                             
+                    $totalMbBasicSumInsured : Number( ) from accumulate ( 
+                            Basic( $basicSumInsured : sumInsuredHkd != null,productType != null
+                                ,isValidProduct(
+                                    "MB","MBA","MBB II","MBE","MBA II","MBB III"
+                                ) 
+                            ),
+                             sum($basicSumInsured.multiply($exchangeRate))) // current application with basic
+                
+                Number ($riderCount : intValue()) from accumulate (
+                        Rider() from $riderList,count(1)
+                    )
+                    
+                    Number (intValue() == $riderCount) from accumulate(
+                        Rider(sumInsuredHkd != null,
+                                productType != null),
+                        count(1)
+                    )
+                    
+                  $totalRiderSumInsured : (Number( ) from accumulate ( 
+                            Rider( $riderSumInsured : sumInsuredHkd != null,productType != null
+                                ,isValidProduct(
+                                    "LIP","SLI","ELI","SML","SMR","SKI","CI10","HMI","ES","ESB","HA","ESA","HB","ESB2","AIO"
+                                    ,"HA II","HB II","ESA II","ESB III"
+                                ) 
+                            ),
+                            sum($riderSumInsured.multiply($exchangeRate)) // current application with rider
+                        )
+                    )
+                    
+                    $totalMbRiderSumInsured : (Number( ) from accumulate ( 
+                            Rider( $riderSumInsured : sumInsuredHkd != null,productType != null,
+                                isValidProduct("MB","MBA","MBB II","MBE","MBA II","MBB III")
+                            ),
+                            sum($riderSumInsured.multiply($exchangeRate).multiply(new BigDecimal("0.5"))) // current application with MB rider (50% of amount)
+                        )
+                    )
+                    //**************************************************
+                    
+                    //****************** Policy **********************
+                    
+                    Number ($policyCount : intValue()) from accumulate(
+                        Policy() from $policyList, count(1)
+                    )
+                    
+                    Number (intValue() == $policyCount) from accumulate(
+                        Policy(sumInsuredHkd != null, productType != null),count(1)
+                    )
+                    
+                  $totalPolicySumInsured : Number( ) from accumulate ( 
+                      Policy( $policySumInsured : sumInsuredHkd != null, 
+                            Constants.insured.equals(currentRole), Constants.insured.equals(role), 
+                            isInforce(policyStatus) == true,productType != null
+                            ,isValidProduct(
+                                    "LIP","SLI","ELI","SML","SMR","SKI","CI10","HMI","ES","ESB","HA","ESA","HB","ESB2","AIO"
+                                    ,"HA II","HB II","ESA II","ESB III"
+                                ) 
+                            ),
+                             sum($policySumInsured.multiply($exchangeRate)) // all in-force Basic
+                    ) 
+                    
+                $totalMbPolicySumInsured : Number( ) from accumulate ( 
+                      Policy( $policySumInsured : sumInsuredHkd != null, 
+                            Constants.insured.equals(currentRole), Constants.insured.equals(role), 
+                            isInforce(policyStatus) == true,productType != null
+                            ,isValidProduct("MB","MBA","MBB II","MBE","MBA II","MBB III")
+                            ),
+                             sum($policySumInsured.multiply($exchangeRate)) // all in-force Basic
+                    ) 
+                    
+                    Number ($policyRiderCount : intValue()) from accumulate(
+                        PolicyRider() from $policyRiderList, count(1)
+                    )
+                    
+                    Number (intValue() == $policyRiderCount) from accumulate(
+                        PolicyRider(sumInsuredHkd != null, productType != null),count(1)
+                    )
+                             
+                  $totalPolicyRiderSumInsured : Number( ) from accumulate ( 
+                            PolicyRider( $policyRiderSumInsured : sumInsuredHkd != null, Constants.insured.equals(currentRole), Constants.insured.equals(role), "".equals(riderStatus.trim()),
+                                productType != null,isValidProduct(
+                                    "LIP","SLI","ELI","SML","SMR","SKI","CI10","HMI","ES","ESB","HA","ESA","HB","ESB2","AIO"
+                                    ,"HA II","HB II","ESA II","ESB III"
+                                ) 
+                            ),
+                             sum($policyRiderSumInsured.multiply($exchangeRate)) // selected in-force Policy Rider
+                    ) 
+                             
+                    $totalMbPolicyRiderSumInsured : Number( ) from accumulate ( 
+                            PolicyRider( $policyRiderSumInsured : sumInsuredHkd != null, Constants.insured.equals(currentRole), Constants.insured.equals(role), "".equals(riderStatus.trim()),
+                                productType != null,isValidProduct("MB","MBA","MBB II","MBE","MBA II","MBB III")
+                            ),
+                             sum($policyRiderSumInsured.multiply($exchangeRate).multiply(new BigDecimal("0.5"))) // selected in-force MB Policy Rider
+                    ) 
+                    //************************************************ 
+                      
+                    //***************** Application ********************    
+                    
+                    Number ($appCount : intValue()) from accumulate(
+                        Application() from $applicationList, count(1)
+                    )
+                    
+                    Number (intValue() == $appCount) from accumulate(
+                        Application(sumInsuredHkd != null, productType != null),count(1)
+                    )
+                    
+                    $totalApplicationSumInsured : Number( ) from accumulate ( 
+                            Application( 
+                                $applicationSumInsured : sumInsuredHkd != null, 
+                                Constants.insured.equals(currentRole), Constants.insured.equals(role), 
+                                isActive(applicationStatus),productType != null
+                                ,isValidProduct(
+                                    "LIP","SLI","ELI","SML","SMR","SKI","CI10","HMI","ES","ESB","HA","ESA","HB","ESB2","AIO"
+                                    ,"HA II","HB II","ESA II","ESB III"
+                                )
+                            ),
+                             sum($applicationSumInsured.multiply($exchangeRate)) // all active application
+                    )
+                    
+                    $totalMbApplicationSumInsured : Number( ) from accumulate ( 
+                            Application( 
+                                $applicationSumInsured : sumInsuredHkd != null, 
+                                Constants.insured.equals(currentRole), Constants.insured.equals(role), 
+                                isActive(applicationStatus),productType != null
+                                ,isValidProduct("MB","MBA","MBB II","MBE","MBA II","MBB III")
+                            )
+                            ,
+                             sum($applicationSumInsured.multiply($exchangeRate)) // all active application
+                    )
+                    
+                    Number ($appRiderCount : intValue()) from accumulate(
+                        ApplicationRider() from $appRiderList, count(1)
+                    )
+                    
+                    Number (intValue() == $appRiderCount) from accumulate(
+                        ApplicationRider(sumInsuredHkd != null, productType != null),count(1)
+                    )
+                    
+                     $totalApplicationRiderSumInsured : Number( ) from accumulate ( 
+                            ApplicationRider( $applicationRiderSumInsured : sumInsuredHkd != null, Constants.insured.equals(currentRole), Constants.insured.equals(role), isActive(applicationStatus),
+                                productType != null,isValidProduct(
+                                    "LIP","SLI","ELI","SML","SMR","SKI","CI10","HMI","ES","ESB","HA","ESA","HB","ESB2","AIO"
+                                    ,"HA II","HB II","ESA II","ESB III"
+                                )
+                            ),
+                             sum($applicationRiderSumInsured.multiply($exchangeRate)) // all active application rider
+                    )
+                    
+                     $totalApplicationMbRiderSumInsured : Number( ) from accumulate ( 
+                            ApplicationRider( $applicationRiderSumInsured : sumInsuredHkd != null, Constants.insured.equals(currentRole), Constants.insured.equals(role), isActive(applicationStatus),
+                                productType != null,isValidProduct("MB","MBA","MBB II","MBE","MBA II","MBB III")
+                            ),
+                             sum($applicationRiderSumInsured.multiply($exchangeRate).multiply(new BigDecimal("0.5"))) // all active application MB rider
+                    )
+                    
+                    //**************************************************
+                    eval( new BigDecimal($totalPolicySumInsured.toString()).add(
+                               new BigDecimal($totalMbPolicySumInsured.toString())).add(
+                      new BigDecimal($totalPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalMbPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationSumInsured.toString())).add(
+                          new BigDecimal($totalMbApplicationSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationMbRiderSumInsured.toString())).add(
+                      new BigDecimal($totalBasicSumInsured.toString())).add(
+                          new BigDecimal($totalMbBasicSumInsured.toString())).add(
+                      new BigDecimal($totalRiderSumInsured.toString())).add(
+                      new BigDecimal($totalMbRiderSumInsured.toString())).compareTo($maxLifeSumInsured) == 1)
+                   $resultObj : Result( $individualResultList : individualResult)
+                   $ruleObj : RuleObject( ruleNo == "14" )
+          then
+                   $processObj.setRule14Processed( true );
+                  IndividualResult $individualResult = new IndividualResult();
+                  InsuredIndividual $insuredIndividual = new InsuredIndividual();
+                //   OwnerIndividual $ownerIndividual = new OwnerIndividual();
+                  java.text.DecimalFormat df = new java.text.DecimalFormat(Constants.decimalFormatString);
+                  List failedReasons = new ArrayList<String>();
+                  List otherDetails = new ArrayList<OtherDetailObj>();
+                  BigDecimal $totalSi = new BigDecimal($totalPolicySumInsured.toString()).add(
+                               new BigDecimal($totalMbPolicySumInsured.toString())).add(
+                      new BigDecimal($totalPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalMbPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationSumInsured.toString())).add(
+                          new BigDecimal($totalMbApplicationSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationMbRiderSumInsured.toString())).add(
+                      new BigDecimal($totalBasicSumInsured.toString())).add(
+                          new BigDecimal($totalMbBasicSumInsured.toString())).add(
+                      new BigDecimal($totalRiderSumInsured.toString())).add(
+                      new BigDecimal($totalMbRiderSumInsured.toString()));
+                      
+                  int increment = 0;
+                   
+                  OtherDetailObj occupation = new OtherDetailObj();
+                  occupation.setName("Occupation");
+                  occupation.setValue($insured.getOccupationDesc());
+                  otherDetails.add(occupation);
+                   
+                  OtherDetailObj occupationClass = new OtherDetailObj();
+                  occupationClass.setName("Occupation Class");
+                  occupationClass.setValue($insured.getOccupationClass());
+                  otherDetails.add(occupationClass);
+                   
+                  OtherDetailObj resident = new OtherDetailObj();
+                  resident.setName("Resident");
+                  resident.setValue($insured.getCountryofResidency());
+                  otherDetails.add(resident);
+                   
+                  OtherDetailObj totalSiObj = new OtherDetailObj();
+                  totalSiObj.setName("Total SI");
+                  totalSiObj.setValue(df.format($totalSi));
+                  otherDetails.add(totalSiObj);
+                   
+                  increment = 0;
+                  for (int i=0;i < $policyList.size();i++){
+                      OtherDetailObj policy = new OtherDetailObj();
+                      Policy tempPolicy = (Policy) $policyList.get(i);
+                      
+                      if (tempPolicy.getProductType() != null && tempPolicy.isValidProduct(
+                                "MB","MBA","MBB II","MBE","MBA II","MBB III"
+                                ,"LIP","SLI","ELI","SML","SMR","SKI","CI10","HMI","ES","ESB","HA","ESA","HB","ESB2","AIO"
+                                    ,"HA II","HB II","ESA II","ESB III"
+                                )
+                            ){
+                            increment++;
+                            policy.setName("(" + increment + ")");
+                            policy.setValue(tempPolicy.getPolicyNo() + ";" + tempPolicy.getProductSeries() + ";" + tempPolicy.getCurrency() + df.format(tempPolicy.getSumInsured()));
+                            otherDetails.add(policy);
+                        }
+                  }
+                   
+                  failedReasons.add( "Total Critical Illness SI exceeds maximum limit " + df.format($maxLifeSumInsured));
+                   
+                  // ******* Prepare InsuredIndividual *********
+                  $insuredIndividual.setFailedReasons(failedReasons);
+                  $insuredIndividual.setDecision(Constants.failDecision);
+                  $insuredIndividual.setOtherDetails(otherDetails);
+                   
+                  // *******************************************
+                //   $ownerIndividual.setDecision(Constants.failDecision);
+                   
+                  $individualResult.setRuleNo($ruleObj.getRuleNo());
+                  $individualResult.setDecision(Constants.failDecision);
+                  $individualResult.setRuleName($ruleObj.getRuleName());
+                  $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+                  $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+                  $individualResult.setInsuredIndividual($insuredIndividual);
+                //   $individualResult.setOwnerIndividual($ownerIndividual);
+                  $individualResultList.add( $individualResult );
+                  update($processObj);
+                   long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+                   Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+                   Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

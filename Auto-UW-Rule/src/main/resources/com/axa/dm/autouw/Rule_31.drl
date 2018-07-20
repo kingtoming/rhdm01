@@ -1,0 +1,67 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "Rule_31_init_object"
+    dialect "java"
+    when
+        not (Rule31Object())
+    then
+        Rule31Object rule31Obj = new Rule31Object();
+        rule31Obj.setSumInsuredList(new ArrayList());
+        rule31Obj.setPlanCodeList(new ArrayList());
+        rule31Obj.setMaxSumInsuredList(new ArrayList());
+        insert(rule31Obj);
+    end
+
+rule "Rule_31_extract_data"
+    no-loop true
+    dialect "java"
+    when
+        $rule31Obj : Rule31Object($planCodeList : planCodeList != null, $sumInsuredList : sumInsuredList != null, $maxSumInsuredList : maxSumInsuredList != null)
+        CurrentApplication( $basicList : basic != null )
+		(Basic( $maxSumInsured : maxSumInsured, $sumInsured : sumInsured, $planCode : planCode, sumInsured.compareTo(maxSumInsured) > 0) from $basicList)
+    then
+        $planCodeList.add($planCode);
+        $sumInsuredList.add($sumInsured);
+        $maxSumInsuredList.add($maxSumInsured);
+        update($rule31Obj);
+    end
+        
+
+rule "Rule_31"
+	dialect "java"
+	when
+	    $rule31Obj : Rule31Object($planCodeList : planCodeList != null, $sumInsuredList : sumInsuredList != null, $maxSumInsuredList: maxSumInsuredList != null, $planCodeList.size() > 0 )
+		$processObj : ProcessObject( rule31Processed == false )
+		$resultObj : Result( $individualResultList : individualResult)
+		$ruleObj : RuleObject( ruleNo == "31" )
+		CurrentApplication ($formId : formId)
+	then
+		$processObj.setRule31Processed( true );
+		List failedReasons = new ArrayList<String>();
+		
+		for (int i=0;i < $planCodeList.size();i++){
+          failedReasons.add("The Sum Insured amount " + $sumInsuredList.get(i) + " of the plan " + $planCodeList.get(i) + " exceeds its maximum limit of " + $maxSumInsuredList.get(i) + ".");
+        }
+		
+		
+		IndividualResult $individualResult = new IndividualResult();
+		
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+		$insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+		
+		$individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

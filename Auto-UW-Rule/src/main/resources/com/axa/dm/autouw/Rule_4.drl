@@ -1,0 +1,85 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.util.Date;
+
+
+rule "Rule_4_init_object"
+    dialect "java"
+    when
+        not (Rule4Object())
+    then
+        Rule4Object rule4Obj = new Rule4Object();
+        insert(rule4Obj);
+    end
+
+rule "Rule_4_extract_data_insured"
+    no-loop true
+    dialect "java"
+    when
+        $rule4Obj : Rule4Object(insuredFlag == false )
+        Insured( $insuredFullName : fullName != null , $gender : gender != null , $id : id != null , $dob : dob != null )
+		Owner( $ownerFullName : fullName == $insuredFullName , gender == $gender, id == $id, dob == $dob)
+		Insured( taxResidency == true )
+    then
+        $rule4Obj.setInsuredFullName($insuredFullName);
+        $rule4Obj.setInsuredFlag(true);
+        update($rule4Obj);
+    end
+ 
+ 
+rule "Rule_4_extract_data_owner"
+    no-loop true
+    dialect "java"
+    when
+        $rule4Obj : Rule4Object(ownerFlag == false )
+        Insured( $insuredFullName : fullName != null , $gender : gender != null , $id : id != null , $dob : dob != null )
+		Owner( dob != $dob || gender != $gender || $ownerFullName : fullName != $insuredFullName || id != $id )
+		Owner( taxResidency == true )
+    then
+         $rule4Obj.setOwnerFullName($ownerFullName);
+         $rule4Obj.setOwnerFlag(true);
+        update($rule4Obj);
+    end
+   
+    
+rule "Rule_4 final"
+    dialect "java"
+    when
+        $processObj : ProcessObject( rule4FinalProcessed == false )
+        $individualResult : IndividualResult(ruleNo == "4")
+        $rule4Obj : Rule4Object( ($insuredFullName: insuredFullName != null && $insuredFlag: insuredFlag == true) || ($ownerFullName: ownerFullName != null && $ownerFlag: ownerFlag == true  ) )
+        $ruleObj : RuleObject( ruleNo == "4" )
+        Result( $individualResultList : individualResult)
+        CurrentApplication ($formId : formId)
+    then
+    
+        if($insuredFlag == true){
+            List insuredFailedReasons = new ArrayList<String>();
+    		insuredFailedReasons.add($insuredFullName + " is found to be a US citizen / US tax resident");  
+    		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+    		$insuredIndividual.setFailedReasons(insuredFailedReasons);
+    		$insuredIndividual.setDecision("Fail");
+            $individualResult.setInsuredIndividual($insuredIndividual);
+        }else{
+            List ownerFailedReasons = new ArrayList<String>();
+    		ownerFailedReasons.add($ownerFullName + " is found to be a US citizen / US tax resident");   
+    		OwnerIndividual $ownerIndividual = new OwnerIndividual();
+    		$ownerIndividual.setFailedReasons(ownerFailedReasons);
+    		$ownerIndividual.setDecision("Fail");
+            $individualResult.setOwnerIndividual($ownerIndividual);
+        }
+    
+		$individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        
+        $individualResultList.add($individualResult);
+        $processObj.setRule4FinalProcessed(true);
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+    end

@@ -1,0 +1,240 @@
+package com.axa.dm.autouw;
+
+
+import java.lang.Number;
+import java.util.Date;
+import java.util.Arrays;
+
+
+rule "Rule_20_init_object"
+    dialect "java"
+    when
+        not (Rule20Object())
+    then
+       //System.out.println("Rule_20_init_object");
+        Rule20Object rule20Obj = new Rule20Object();
+        rule20Obj.setPolicyNoInsuredList(new ArrayList());
+        rule20Obj.setPolicyNoOwnerList(new ArrayList());
+        rule20Obj.setWithinNyearsInsuredList(new ArrayList());
+        rule20Obj.setWithinNyearsOwnerList(new ArrayList());
+        rule20Obj.setStatusCodeInsuredList(new ArrayList());
+        rule20Obj.setStatusCodeOwnerList(new ArrayList());
+        insert(rule20Obj);
+    end
+    
+rule "Rule_20_condition_1"
+    dialect "java"
+    no-loop true
+    when
+        $processObj : ProcessObject( rule20Processed == false)
+        $rule20Obj : Rule20Object(condition1Processed == false)
+        exists( Policy ( actualTerminationDate != null, actualTerminationDate != "0", actualTerminationDate != "", policyStatus in ("A", "B", "8") ) ) 
+           
+    then
+     //System.out.println("Rule_20_condition1");
+        $rule20Obj.setCondition1Processed(true);
+        update($rule20Obj);
+end
+
+rule "Rule_20_condition_2"
+    dialect "java"
+    no-loop true
+    when
+    $processObj : ProcessObject( rule20Processed == false)
+    $rule20Obj : Rule20Object(condition2Processed == false)
+    exists( Policy ( actualTerminationDate != null, (actualTerminationDate == "0" || actualTerminationDate == ""), policyStatus in ("A", "B", "8") ) ) 
+            
+    then
+     //System.out.println("Rule_20_condition2");
+        $rule20Obj.setCondition2Processed(true);
+        update($rule20Obj);
+end
+
+rule "Rule_20_Current_Insured"
+    dialect "java"
+    no-loop true
+    when
+    $processObj : ProcessObject( rule20Processed == false, $policyList: policy)
+    $rule20Obj : Rule20Object( ( $condition1Processed: condition1Processed == true  ||  $condition2Processed: condition2Processed == true ) && $policyNoInsuredList: policyNoInsuredList && $withinNyearsInsuredList: withinNyearsInsuredList && $statusCodeInsuredList:statusCodeInsuredList && rule20InsuredProcessed == false )
+    Product( productType in ( "WPD", "WPDD" ) , $validPlanCode : planCode)
+    
+    ( Policy ( $policyNo: policyNo, currentRole == "INS", role == "INS")
+     or Policy ( $policyNo: policyNo, currentRole == "INS", role == "OWN", policyStatus in ("1","2","5","6","B","F"), planCode == $validPlanCode)
+    )
+    
+     Insured ( $fullName: fullName != null)
+    
+    then
+    //System.out.println("Rule_20_Current_Insured");
+        for(int i=0;i<$policyList.size();i++ ){
+             Policy p = (Policy) $policyList.get(i);
+             if (  ( p.getCurrentRole().equalsIgnoreCase("INS") && p.getRole().equalsIgnoreCase("INS") )   
+             ||  ( p.getCurrentRole().equalsIgnoreCase("INS") && p.getRole().equalsIgnoreCase("OWN") &&  Arrays.asList("1","2","5","6","B","F").contains(p.getPolicyStatus()) )   ) {
+                     if($condition1Processed && !p.getActualTerminationDate().trim().equals("") && !p.getActualTerminationDate().trim().equals("0") && Arrays.asList("A", "B", "8").contains(p.getPolicyStatus()) ){
+                         $policyNoInsuredList.add(p.getPolicyNo());
+                         $withinNyearsInsuredList.add("");
+                         $statusCodeInsuredList.add(p.getPolicyStatus());
+                     }
+                     else if($condition2Processed && (p.getActualTerminationDate().trim().equals("") || p.getActualTerminationDate().trim().equals("0")) && Arrays.asList("A", "B", "8").contains(p.getPolicyStatus()) ){
+                         $policyNoInsuredList.add(p.getPolicyNo());
+                         $withinNyearsInsuredList.add("");
+                         $statusCodeInsuredList.add(p.getPolicyStatus());
+                     }
+             }
+        }
+        $rule20Obj.setRule20InsuredProcessed(true);
+        $rule20Obj.setPolicyNoInsuredList($policyNoInsuredList);
+        $rule20Obj.setWithinNyearsInsuredList($withinNyearsInsuredList);
+        $rule20Obj.setStatusCodeInsuredList($statusCodeInsuredList);
+        $rule20Obj.setInsuredFullName($fullName);
+        update($rule20Obj);
+end
+
+rule "Rule_20_Current_Owner"
+    dialect "java"
+    no-loop true
+    when
+    $processObj : ProcessObject( rule20Processed == false, $policyList: policy)
+    $rule20Obj : Rule20Object( ( $condition1Processed: condition1Processed == true  ||  $condition2Processed: condition2Processed == true ) && $policyNoOwnerList: policyNoOwnerList && $withinNyearsOwnerList: withinNyearsOwnerList && $statusCodeOwnerList:statusCodeOwnerList && rule20OwnerProcessed == false )
+    Product( productType in ( "WPD", "WPDD" ) , $validPlanCode : planCode)
+    ( Policy ( $policyNo: policyNo, currentRole == "OWN", role == "INS")
+     or Policy ( $policyNo: policyNo, currentRole == "OWN", role == "OWN", policyStatus in ("1","2","5","6","B","F"), planCode == $validPlanCode)
+    )
+    Owner ( $fullName: fullName != null)
+    
+    then
+   //System.out.println("Rule_20_Current_Owner");
+        for(int i=0;i<$policyList.size();i++ ){
+             Policy p = (Policy) $policyList.get(i);
+             if (  ( p.getCurrentRole().equalsIgnoreCase("OWN") && p.getRole().equalsIgnoreCase("INS") )   
+             ||  ( p.getCurrentRole().equalsIgnoreCase("OWN") && p.getRole().equalsIgnoreCase("OWN") &&  Arrays.asList("1","2","5","6","B","F").contains(p.getPolicyStatus()) )   ) {
+                 if($condition1Processed && !p.getActualTerminationDate().trim().equals("") && !p.getActualTerminationDate().trim().equals("0") && Arrays.asList("A", "B", "8").contains(p.getPolicyStatus()) ){
+                     $policyNoOwnerList.add(p.getPolicyNo());
+                     $withinNyearsOwnerList.add("");
+                     $statusCodeOwnerList.add(p.getPolicyStatus());
+                 }
+                 else if($condition2Processed && (p.getActualTerminationDate().trim().equals("") || p.getActualTerminationDate().trim().equals("0")) && Arrays.asList("A", "B", "8").contains(p.getPolicyStatus()) ){
+                     $policyNoOwnerList.add(p.getPolicyNo());
+                     $withinNyearsOwnerList.add("");
+                     $statusCodeOwnerList.add(p.getPolicyStatus());
+                 }
+             }
+        }
+        $rule20Obj.setRule20OwnerProcessed(true);
+        $rule20Obj.setPolicyNoOwnerList($policyNoOwnerList);
+        $rule20Obj.setWithinNyearsOwnerList($withinNyearsOwnerList);
+        $rule20Obj.setStatusCodeOwnerList($statusCodeOwnerList);
+        $rule20Obj.setOwnerFullName($fullName);
+        update($rule20Obj);
+end
+
+rule "Rule_20"
+    dialect "java"
+    
+    when
+        $processObj : ProcessObject( rule20Processed == false)
+        $rule20Obj : Rule20Object( (rule20InsuredProcessed == true && $policyNoInsuredList: policyNoInsuredList && $withinNyearsInsuredList: withinNyearsInsuredList && $statusCodeInsuredList:statusCodeInsuredList && $insuredFullName: insuredFullName != null ) 
+        || (rule20OwnerProcessed == true && $policyNoOwnerList: policyNoOwnerList && $withinNyearsOwnerList: withinNyearsOwnerList && $statusCodeOwnerList:statusCodeOwnerList && $ownerFullName: ownerFullName != null ) )
+        $resultObj : Result( $individualResultList : individualResult)
+        $ruleObj : RuleObject( ruleNo == "20" )
+        CurrentApplication ($formId : formId)
+    then
+        $processObj.setRule20Processed( true );
+      //  System.out.println("rule 20 final");
+        
+        IndividualResult $individualResult = new IndividualResult();
+        
+        // Insured
+        if($policyNoInsuredList.size() ==  $withinNyearsInsuredList.size() && $statusCodeInsuredList.size() > 0){
+            List failedReasons = new ArrayList<String>();
+            for(int i=0;i<$withinNyearsInsuredList.size();i++ ){
+              String statusCode = (String) $statusCodeInsuredList.get(i);
+              String statusCodeDesc = "";
+              switch(statusCode){
+                    case "A":
+                        statusCodeDesc = "Rescind";
+                        break;
+                    case "B":
+                        statusCodeDesc = "Premium Waived";
+                        break;
+                    case "8":
+                        statusCodeDesc = "Death";
+                        break;
+                    case "C":
+                        statusCodeDesc = "Policy cancelled";
+                        break;
+                    case "4":
+                         statusCodeDesc = "Lapsed";
+                        break;
+                    case "7":
+                         statusCodeDesc = "Surrender";
+                        break;
+                    case "9":
+                         statusCodeDesc = "auto-surrender";
+                        break;
+              }
+              
+              if($withinNyearsInsuredList.get(i).equals("")){
+                  failedReasons.add("Previous policy " + $policyNoInsuredList.get(i)  +" of " + $insuredFullName + " has status " + statusCodeDesc);
+              }else{
+                  failedReasons.add("Previous policy " + $policyNoInsuredList.get(i)  +" of " + $insuredFullName + " has status " + statusCodeDesc + " within the past " + $withinNyearsInsuredList.get(i) + " months.");
+              }
+            }
+            InsuredIndividual $insuredIndividual = new InsuredIndividual();
+            $insuredIndividual.setFailedReasons(failedReasons);
+            $insuredIndividual.setDecision("Fail");
+            $individualResult.setInsuredIndividual($insuredIndividual);
+        }
+        
+        // Owner
+        if($policyNoOwnerList.size() ==  $withinNyearsOwnerList.size() && $statusCodeOwnerList.size() > 0){
+        List ownerFailedReasons = new ArrayList<String>();
+        for(int i=0;i<$withinNyearsOwnerList.size();i++ ){
+            String statusCode = (String) $statusCodeOwnerList.get(i);
+            String statusCodeDesc = "";
+            switch(statusCode){
+                    case "A":
+                        statusCodeDesc = "Rescind";
+                        break;
+                    case "B":
+                        statusCodeDesc = "Premium Waived";
+                        break;
+                    case "8":
+                        statusCodeDesc = "Death";
+                        break;
+                    case "C":
+                        statusCodeDesc = "Policy cancelled";
+                        break;
+                    case "4":
+                         statusCodeDesc = "Lapsed";
+                        break;
+                    case "7":
+                         statusCodeDesc = "Surrender";
+                        break;
+                    case "9":
+                         statusCodeDesc = "auto-surrender";
+                        break;
+              }
+          if($withinNyearsOwnerList.get(i).equals("")){
+              ownerFailedReasons.add("Previous policy " + $policyNoOwnerList.get(i)  +" of " + $ownerFullName + " has status " + statusCodeDesc);
+          }else{
+              ownerFailedReasons.add("Previous policy " + $policyNoOwnerList.get(i)  +" of " + $ownerFullName + " has status " + statusCodeDesc + " within the past " + $withinNyearsOwnerList.get(i) + " months.");
+          }
+        }
+        OwnerIndividual $ownerIndividual = new OwnerIndividual();
+        $ownerIndividual.setFailedReasons(ownerFailedReasons);
+        $ownerIndividual.setDecision("Fail");
+        $individualResult.setOwnerIndividual($ownerIndividual);
+    }
+    
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

@@ -1,0 +1,36 @@
+package com.axa.dm.autouw;
+
+rule "Rule_39"
+    dialect "java"
+    when 
+        $processObj : ProcessObject( rule39Processed == false)
+        exists( Insured(occupationRiskFlag == true) )
+        $ruleObj : RuleObject( ruleNo == "39" )
+        $resultObj : Result( $individualResultList : individualResult)
+        CurrentApplication ($formId : formId)
+        
+    then
+        $processObj.setRule39Processed(true);
+        List failedReasons = new ArrayList<String>();
+		List failedApplicationNo = new ArrayList<String>();
+		failedReasons.add("Proposed Insured's occupation is of high risk (refer to the AML guideline).");
+	
+        IndividualResult $individualResult = new IndividualResult();
+		
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+        $insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+        
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResultList.add( $individualResult );
+        
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

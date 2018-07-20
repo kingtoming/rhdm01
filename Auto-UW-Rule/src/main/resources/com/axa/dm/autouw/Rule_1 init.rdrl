@@ -1,0 +1,16 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "Rule_1 init"
+	dialect "mvel"
+	lock-on-active true
+	when
+		not (Rule1Obj( )) 
+		$resultObj : Result( )
+	then
+		insert( new Rule1Obj() );
+		modify( $resultObj ) {
+				setMedicalTestsRequired( new ArrayList() )
+		}
+end

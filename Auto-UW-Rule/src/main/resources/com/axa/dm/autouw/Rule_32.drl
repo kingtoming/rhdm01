@@ -1,0 +1,112 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.util.Date;
+
+rule "Rule_32_HK"
+	dialect "java"
+	when
+		$processObject : ProcessObject( rule32HKProcessed == false )
+		
+		$processObj : ProcessObject( )
+		$currentApplication : CurrentApplication( policyLocationCode !=null, policyLocationCode == "" )
+		($insured : Insured( dobCal != null ) from $currentApplication.insured)
+		($dayDiff : Number( this.longValue() < 864000000 ) from $processObj.getCurrentDateTime() - $insured.dobCal.getTime())
+        
+		$resultObj : Result( $individualResultList : individualResult)
+	    $ruleObj : RuleObject( ruleNo == "32" )
+	    $individualResult: IndividualResult( ruleNo == "32" )
+	then
+		List failedReasons = new ArrayList<String>();
+		failedReasons.add("Fail Reason: Insured's age is " + (int)((double)(($processObj.getCurrentDateTime() - $insured.getDobCal().getTime())/86400000)) + " days old and cannot fulfill the minimum age requirement.");
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+		$insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        
+        
+        update($individualResult);
+        $processObject.setRule32HKProcessed(true);
+        update($processObject);
+end
+
+rule "Rule_32_MCV"
+	dialect "java"
+	when
+		$processObject : ProcessObject( rule32MCVProcessed == false )
+		
+		$processObj : ProcessObject( )
+		$currentApplication : CurrentApplication( policyLocationCode !=null, policyLocationCode == "MCP" )
+		($insured : Insured( dobCal != null ) from $currentApplication.insured)
+		($dayDiff : Number( this.longValue() < 1209600000 ) from $processObj.getCurrentDateTime() - $insured.dobCal.getTime())
+		
+		Basic( productType != null, isValidProduct("APF3R"), $planCode: planCode != null)
+        //Product( productType in ( "APF3R" ) , $validPlanCode : planCode)
+        //Basic ( $planCode: planCode != null, planCode != $validPlanCode)
+		$resultObj : Result( $individualResultList : individualResult)
+	    $ruleObj : RuleObject( ruleNo == "32" )
+	    $individualResult: IndividualResult( ruleNo == "32" )
+	then
+		List failedReasons = new ArrayList<String>();
+		failedReasons.add("Fail Reason: Insured's age is " + (int)((double)(($processObj.getCurrentDateTime() - $insured.getDobCal().getTime())/86400000)) + " days old and cannot fulfill the minimum age requirement.");
+		OwnerIndividual $ownerIndividual = new OwnerIndividual();
+		$ownerIndividual.setFailedReasons(failedReasons);
+		$ownerIndividual.setDecision("Fail");
+        $individualResult.setOwnerIndividual($ownerIndividual);
+    
+        update($individualResult);
+        $processObject.setRule32MCVProcessed(true);
+        update($processObject);
+end
+
+rule "Rule_32_MCV_APF3R"
+	dialect "java"
+	when
+		$processObject : ProcessObject( rule32MCVProcessed == false )
+		
+		$processObj : ProcessObject( )
+		$currentApplication : CurrentApplication( policyLocationCode !=null, policyLocationCode == "MCP" )
+		($insured : Insured( dobCal != null ) from $currentApplication.insured)
+		($dayDiff : Number( this.longValue() < 2592000000 ) from $processObj.getCurrentDateTime() - $insured.dobCal.getTime())
+        Basic( productType != null, isValidProduct("APF3R"), $planCode: planCode != null)
+		//Product( productType in ( "APF3R" ) , $validPlanCode : planCode)
+        //Basic ( $planCode: planCode != null, planCode == $validPlanCode)
+		$resultObj : Result( $individualResultList : individualResult)
+	    $ruleObj : RuleObject( ruleNo == "32" )
+	    $individualResult: IndividualResult( ruleNo == "32" )
+	then
+		List failedReasons = new ArrayList<String>();
+		failedReasons.add("Fail Reason: Insured's age is " + (int)((double)(($processObj.getCurrentDateTime() - $insured.getDobCal().getTime())/86400000)) + " days old and cannot fulfill the minimum age requirement.");
+		OwnerIndividual $ownerIndividual = new OwnerIndividual();
+		$ownerIndividual.setFailedReasons(failedReasons);
+		$ownerIndividual.setDecision("Fail");
+        $individualResult.setOwnerIndividual($ownerIndividual);
+    
+        update($individualResult);
+        $processObject.setRule32MCVProcessed(true);
+        update($processObject);
+end
+
+rule "Rule_32 final"
+    dialect "java"
+    when
+        $processObj : ProcessObject( (rule32HKProcessed == true || rule32MCVProcessed == true) , rule32FinalProcessed == false )
+        $individualResult : IndividualResult(ruleNo == "32")
+        $ruleObj : RuleObject( ruleNo == "32" )
+        Result( $individualResultList : individualResult)
+        CurrentApplication ($formId : formId)
+    then
+    
+		$individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        
+        $individualResultList.add($individualResult);
+        $processObj.setRule32FinalProcessed(true);
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+    end

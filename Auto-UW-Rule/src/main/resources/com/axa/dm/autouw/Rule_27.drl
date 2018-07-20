@@ -1,0 +1,67 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "Rule_27_init_object"
+    dialect "java"
+    when
+        not (Rule27Object())
+    then
+        Rule27Object rule27Obj = new Rule27Object();
+        rule27Obj.setPlanCodeList(new ArrayList());
+        rule27Obj.setPolicyNoList(new ArrayList());
+        insert(rule27Obj);
+    end
+
+rule "Rule_27_extract_plan_code"
+    no-loop true
+    dialect "java"
+    when
+        $rule27Obj : Rule27Object($planCodeList : planCodeList, $policyNoList: policyNoList)
+        $processObj : ProcessObject( rule27Processed == false )
+		//Claim( claimType in ( "WP" ))
+		//Product( productType in ( "WP" ) , $validPlanCode : planCode != null)
+		Policy( currentRole == "OWN", $policyNo : policyNo != null)
+        Claim( claimType in ( "WP" ), policyNo == $policyNo , $planCode : plancode )
+    then
+        $planCodeList.add($planCode);
+        $policyNoList.add($policyNo);
+        update($rule27Obj);
+    end
+        
+        
+rule "Rule_27"
+	dialect "java"
+	when
+	    $rule27Obj : Rule27Object($planCodeList : planCodeList, $policyNoList: policyNoList, $planCodeList.size() > 0)
+		$processObj : ProcessObject( rule27Processed == false )
+
+		$resultObj : Result( $individualResultList : individualResult)
+		$ruleObj : RuleObject( ruleNo == "27" )
+		CurrentApplication ( $formId : formId)
+	then
+		$processObj.setRule27Processed( true );
+		List failedReasons = new ArrayList<String>();
+		
+		for (int i=0;i < $planCodeList.size();i++){
+          	failedReasons.add("Payor benefit " + $planCodeList.get(i) + " claim found in previous policy " + $policyNoList.get(i) + ".");
+		}
+		
+		IndividualResult $individualResult = new IndividualResult();
+		
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+		$insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+		
+		$individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

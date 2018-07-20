@@ -1,0 +1,160 @@
+package com.axa.dm.autouw;
+
+rule "init Rule_17A object"
+    dialect "mvel"
+    when
+        not Rule17AObj()
+    then
+        insert(new Rule17AObj());
+end
+
+rule "Rule_17A calculate aggregate daily income for insured (non Hospital-sure)"
+    dialect "java"
+    when
+        $rule17AObj : Rule17AObj()
+        exists(Basic (productType != null, isValidProduct("MEB","MEH")) or Rider(productType != null, isValidProduct("MEB","MEH")))
+          //************ Current Application *****************
+        $totalBasicDailyIncome : Number( ) from accumulate ( 
+                Basic( $basicDailyIncome : dailyIncome != null,
+                    productType != null, isValidProduct("MEB","MEH")
+                ),
+                  sum($basicDailyIncome)
+        ) // current application with GIO basic
+        
+        $totalRiderDailyIncome : (Number( ) from accumulate ( 
+                 Rider( $riderDailyIncome : dailyIncome != null,
+                     productType != null, isValidProduct("MEB","MEH")
+                 ),
+                 sum($riderDailyIncome) // current application with GIO rider
+             )
+         )
+         
+         //**************************************************
+         
+         //****************** Policy **********************
+        $totalPolicyDailyIncome : Number( ) from accumulate ( 
+                 Policy( $policyDailyIncome : dailyIncome != null, 
+                         Constants.insured.equals(currentRole), 
+                         Constants.insured.equals(role), isInforce(policyStatus) == true,
+                         productType != null, isValidProduct("MEB","MEH")
+                 ),
+                  sum($policyDailyIncome) // all in-force GIO Basic
+         ) 
+                  
+        $totalPolicyRiderDailyIncome : Number( ) from accumulate ( 
+                 PolicyRider( $policyDailyIncome : dailyIncome, Constants.insured.equals(currentRole), Constants.insured.equals(role), "".equals(riderStatus.trim()),
+                     productType != null, isValidProduct("MEB","MEH")
+                 ),
+                  sum($policyDailyIncome) // selected in-force GIO Policy Rider
+         ) 
+                  
+         //************************************************ 
+           
+         //***************** Application ********************       
+         $totalApplicationDaliyIncome : Number( ) from accumulate ( 
+                 Application( $applicationDailyIncome : dailyIncome, 
+                             Constants.insured.equals(currentRole), 
+                             Constants.insured.equals(role), 
+                             isActive(applicationStatus),
+                             productType != null, isValidProduct("MEB","MEH")
+                 ),
+                  sum($applicationDailyIncome) // all active GIO application
+         )
+         
+          $totalApplicationRiderDaliyIncome : Number( ) from accumulate ( 
+                 ApplicationRider( $applicationRiderDailyIncome : dailyIncome, Constants.insured.equals(currentRole), Constants.insured.equals(role), isActive(applicationStatus),
+                     productType != null, isValidProduct("MEB","MEH")
+                 ),
+                  sum($applicationRiderDailyIncome) // all active GIO application rider
+         )
+
+                    
+         //**************************************************
+    then
+        BigDecimal totalDailyIncome = 
+                                new BigDecimal($totalBasicDailyIncome.toString()).add(
+                                new BigDecimal($totalRiderDailyIncome.toString())).add(
+                                new BigDecimal($totalPolicyDailyIncome.toString())).add(
+                                new BigDecimal($totalPolicyRiderDailyIncome.toString())).add(
+                                new BigDecimal($totalApplicationDaliyIncome.toString())).add(
+                                new BigDecimal($totalApplicationRiderDaliyIncome.toString()));
+        $rule17AObj.setAggDailyIncome(totalDailyIncome);
+        update($rule17AObj);
+end
+
+//***************************************************************************************************************************************
+
+rule "Rule_17A calculate aggregate daily income for insured (Hospital-sure)"
+    dialect "java"
+    when
+        $rule17AObj : Rule17AObj()
+        exists(Basic (productType != null, isValidProduct("HealthSure")) or Rider(productType != null, isValidProduct("HealthSure")))
+          //************ Current Application *****************
+        $totalBasicDailyIncome : Number( ) from accumulate ( 
+                Basic( $basicDailyIncome : dailyIncome != null,
+                    productType != null, isValidProduct("HealthSure")
+                ),
+                  sum($basicDailyIncome)
+        ) // current application with GIO basic
+        
+        $totalRiderDailyIncome : (Number( ) from accumulate ( 
+                 Rider( $riderDailyIncome : dailyIncome != null,
+                     productType != null, isValidProduct("HealthSure")
+                 ),
+                 sum($riderDailyIncome) // current application with GIO rider
+             )
+         )
+         
+         //**************************************************
+         
+         //****************** Policy **********************
+        $totalPolicyDailyIncome : Number( ) from accumulate ( 
+                 Policy( $policyDailyIncome : dailyIncome != null, 
+                         Constants.insured.equals(currentRole), 
+                         Constants.insured.equals(role), isInforce(policyStatus) == true,
+                         productType != null, isValidProduct("HealthSure")
+                 ),
+                  sum($policyDailyIncome) // all in-force GIO Basic
+         ) 
+                  
+        $totalPolicyRiderDailyIncome : Number( ) from accumulate ( 
+                 PolicyRider( $policyDailyIncome : dailyIncome, Constants.insured.equals(currentRole), Constants.insured.equals(role), "".equals(riderStatus.trim()),
+                     productType != null, isValidProduct("HealthSure")
+                 ),
+                  sum($policyDailyIncome) // selected in-force GIO Policy Rider
+         ) 
+                  
+         //************************************************ 
+           
+         //***************** Application ********************       
+         $totalApplicationDaliyIncome : Number( ) from accumulate ( 
+                 Application( $applicationDailyIncome : dailyIncome, 
+                             Constants.insured.equals(currentRole), 
+                             Constants.insured.equals(role), 
+                             isActive(applicationStatus),
+                             productType != null, isValidProduct("HealthSure")
+                 ),
+                  sum($applicationDailyIncome) // all active GIO application
+         )
+         
+          $totalApplicationRiderDaliyIncome : Number( ) from accumulate ( 
+                 ApplicationRider( $applicationRiderDailyIncome : dailyIncome, Constants.insured.equals(currentRole), Constants.insured.equals(role), isActive(applicationStatus),
+                     productType != null, isValidProduct("HealthSure")
+                 ),
+                  sum($applicationRiderDailyIncome) // all active GIO application rider
+         )
+
+                    
+         //**************************************************
+    then
+        BigDecimal totalDailyIncome = 
+                                new BigDecimal($totalBasicDailyIncome.toString()).add(
+                                new BigDecimal($totalRiderDailyIncome.toString())).add(
+                                new BigDecimal($totalPolicyDailyIncome.toString())).add(
+                                new BigDecimal($totalPolicyRiderDailyIncome.toString())).add(
+                                new BigDecimal($totalApplicationDaliyIncome.toString())).add(
+                                new BigDecimal($totalApplicationRiderDaliyIncome.toString()));
+        $rule17AObj.setAggDailyIncome(totalDailyIncome);
+        $rule17AObj.setHospitalSure(true);
+        update($rule17AObj);
+end

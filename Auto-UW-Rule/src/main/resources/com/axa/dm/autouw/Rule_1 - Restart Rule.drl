@@ -1,0 +1,18 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "Rule_1 - Restart rule"
+	dialect "mvel"
+	lock-on-active true
+	when
+		$processObj : ProcessObject( applicationCount == null,$applicationList : application, $policyList : policy )
+		Number( $applicationCount : intValue()) from accumulate ( Application( dateofSubmissionCal after $processObj.withinPastSixMonth() , currentRole == ( Constants.insured ) , role == ( Constants.insured ) ) from $applicationList,
+			count(1)) 
+		Number( $policyCount : intValue()) from accumulate ( Policy( dateofSubmissionCal after $processObj.withinPastSixMonth() , currentRole == ( Constants.insured ) , role == ( Constants.insured ), isInforce(policyStatus) ) from $policyList,
+			count(1)) 
+	then
+		modify( $processObj ) {
+				setApplicationCount( $applicationCount + $policyCount + 1 )
+		}
+end

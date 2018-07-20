@@ -1,0 +1,645 @@
+package com.axa.dm.autouw;
+
+import java.util.HashSet;
+import java.util.Set;
+
+rule "init Rule 9 Object"
+    lock-on-active true
+    dialect "java"
+    when
+        not(Rule9Obj())
+    then
+        Rule9Obj rule9Obj = new Rule9Obj();
+        rule9Obj.setFailReasonList(new ArrayList());
+		rule9Obj.setTargetPolicyList(new ArrayList());
+		rule9Obj.setTargetAppList(new ArrayList());
+        insert(rule9Obj);
+end
+
+rule "Rule 9 - 101/105 Product with Insured (Check Lump Sum)"
+    dialect "java"
+    when
+        ProcessObject ($policyList : policy, $appList : application)
+        $rule9Obj : Rule9Obj( checkLumpSumProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+        exists( Basic (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) 
+                        or Rider (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) )
+        Payor( Constants.insuredPayorId.equals(role) ) // Payor as insured
+                
+        Number ($policyCount : intValue()) from accumulate(Policy() from $policyList, count(1))
+        Number (intValue() == $policyCount) from accumulate( Policy(lumpSumHkd != null, productType != null, annualRegularPremiumHkd != null), count(1))
+        
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                            Policy( $policyLumpSum : lumpSumHkd != null, 
+                                    Constants.insured.equals(currentRole), 
+                                    isInforce(policyStatus) == true,
+                                    productType != null,
+                                    isValidProduct ("ILAS","SSV3","FGS")
+                            ),
+                             sum($policyLumpSum) // all in-force 101/105 Basic
+                    )
+					
+		$totalPolicyAnnualRegularPremium : Number( ) from accumulate ( 
+                            Policy( $annualRegularPremiumHkd : annualRegularPremiumHkd != null, 
+                                    Constants.insured.equals(currentRole), 
+                                    isInforce(policyStatus) == true,
+                                    productType != null,
+                                    isValidProduct ("ILAS","SSV3","FGS")
+                            ),
+                             sum($annualRegularPremiumHkd) // all in-force 101/105 Basic
+                    )
+          
+        // Number ($appCount : intValue()) from accumulate(Application() from $appList, count(1))
+        // Number (intValue() == $appCount) from accumulate( Application(lumpSumHkd != null, productType != null), count(1))          
+        // $totalApplicationLumpSum : Number( ) from accumulate ( 
+        //                     Application( $applicationLumpSum : lumpSumHkd != null, 
+        //                                 Constants.insured.equals(currentRole), 
+        //                                 isActive(applicationStatus),
+        //                                 productType != null,
+        //                                 isValidProduct ("ILAS","SSV3","FGS")
+        //                     ),
+        //                      sum($applicationLumpSum) // all active 101/105 application
+        //             )
+                    
+        eval(   new BigDecimal($totalPolicyLumpSum.toString())
+                // .add(new BigDecimal($totalApplicationLumpSum.toString()))
+                .compareTo(new BigDecimal("3000000")) == 1
+                )
+		
+		$targetPolicyList1 : List() from accumulate (
+			$policy : Policy( 
+				lumpSumHkd != null, 
+                Constants.insured.equals(currentRole), 
+                isInforce(policyStatus) == true,
+                productType != null,
+                isValidProduct ("ILAS","SSV3","FGS")
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+    then
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 3,000,000");
+        $rule9Obj.setCheckLumpSumProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyAnnualRegularPremium.toString()));
+		$targetPolicyList.addAll($targetPolicyList1);
+        update($rule9Obj);
+end
+
+rule "Rule 9 - 101/105 Product with Owner (Check Lump Sum)"
+    when
+        ProcessObject ($policyList : policy, $appList : application)
+        $rule9Obj : Rule9Obj( checkLumpSumProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+        exists( Basic (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) or 
+                Rider (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) 
+        )
+         Payor( Constants.ownerPayorId.equals(role) ) // Payor as owner
+         
+        Number ($policyCount : intValue()) from accumulate(Policy() from $policyList, count(1))
+        Number (intValue() == $policyCount) from accumulate( Policy(lumpSumHkd != null, productType != null, annualRegularPremiumHkd != null), count(1))
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                     Policy( $policyLumpSum : lumpSumHkd != null, 
+                             Constants.owner.equals(currentRole), 
+                             isInforce(policyStatus) == true,
+                             productType != null,
+                             isValidProduct("ILAS","SSV3","FGS")
+                     ),
+                      sum($policyLumpSum) // all in-force 101/105 Basic
+             ) 
+			 
+		$totalPolicyAnnualRegularPremium : Number( ) from accumulate ( 
+                     Policy( $annualRegularPremiumHkd : annualRegularPremiumHkd != null, 
+                             Constants.owner.equals(currentRole), 
+                             isInforce(policyStatus) == true,
+                             productType != null,
+                             isValidProduct("ILAS","SSV3","FGS")
+                     ),
+                      sum($annualRegularPremiumHkd) // all in-force 101/105 Basic
+             )
+          
+        // Number ($appCount : intValue()) from accumulate(Application() from $appList, count(1))
+        // Number (intValue() == $appCount) from accumulate( Application(lumpSumHkd != null, productType != null), count(1))       
+        // $totalApplicationLumpSum : Number( ) from accumulate ( 
+        //              Application( $applicationLumpSum : lumpSumHkd != null, 
+        //                          Constants.owner.equals(currentRole), 
+        //                          isActive(applicationStatus),
+        //                          productType != null,
+        //                          isValidProduct("ILAS","SSV3","FGS")
+        //              ),
+        //               sum($applicationLumpSum) // all active 101/105 application
+        //     )
+          
+        eval(   new BigDecimal($totalPolicyLumpSum.toString())
+                // .add(new BigDecimal($totalApplicationLumpSum.toString()))
+                .compareTo(new BigDecimal("3000000")) == 1
+        ) 
+		
+		$targetPolicyList2 : List() from accumulate (
+			$policy : Policy( 
+				lumpSumHkd != null, 
+                Constants.owner.equals(currentRole), 
+                isInforce(policyStatus) == true,
+                productType != null,
+                isValidProduct ("ILAS","SSV3","FGS")
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+    then
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 3,000,000");
+        $rule9Obj.setCheckLumpSumProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyAnnualRegularPremium.toString()));
+		$targetPolicyList.addAll($targetPolicyList2);
+        update($rule9Obj);
+end
+
+
+rule "Rule 9 - 101/105 Product with Insured (Check Annual Regular Premium)"
+    dialect "java"
+    when
+        ProcessObject ($policyList : policy, $appList : application)
+        $rule9Obj : Rule9Obj( checkAnnualRegularPremiumProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+        exists( Basic (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) or Rider (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) )
+        Payor( Constants.insuredPayorId.equals(role) ) // Payor as insured
+          
+        Number ($policyCount : intValue()) from accumulate(Policy() from $policyList, count(1))
+        Number (intValue() == $policyCount) from accumulate( Policy(annualRegularPremiumHkd != null, productType != null), count(1))
+        
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                            Policy( $policyLumpSum : annualRegularPremiumHkd != null, 
+                                    Constants.insured.equals(currentRole), 
+                                    isInforce(policyStatus) == true,
+                                    productType != null,
+                                    isValidProduct("ILAS","SSV3","FGS")
+                            ),
+                             sum($policyLumpSum) // all in-force 101/105 Basic
+                    )
+                    
+        // $totalApplicationLumpSum : Number( ) from accumulate ( 
+        //                     Application( $applicationLumpSum : annualRegularPremiumHkd != null, 
+        //                                 Constants.insured.equals(currentRole), 
+        //                                 isActive(applicationStatus),
+        //                                 productType in ("ILAS","SSV3","FGS")
+        //                     ),
+        //                      sum($applicationLumpSum) // all active 101/105 application
+        //             )
+                    
+        eval(   new BigDecimal($totalPolicyLumpSum.toString())
+                // .add(new BigDecimal($totalApplicationLumpSum.toString()))
+                .compareTo(new BigDecimal("1000000")) == 1
+                ) 
+				
+		$targetPolicyList3 : List() from accumulate (
+			$policy : Policy( 
+				annualRegularPremiumHkd != null, 
+                Constants.insured.equals(currentRole),
+                isInforce(policyStatus) == true,
+                productType != null,
+                isValidProduct ("ILAS","SSV3","FGS")
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+		
+    then
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 1,000,000");
+        $rule9Obj.setCheckAnnualRegularPremiumProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyLumpSum.toString()));
+		$targetPolicyList.addAll($targetPolicyList3);
+        update($rule9Obj);
+end
+
+rule "Rule 9 - 101/105 Product with Owner (Check Annual Regular Premium)"
+    when
+        ProcessObject ($policyList : policy, $appList : application)
+        $rule9Obj : Rule9Obj( checkAnnualRegularPremiumProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+        exists( Basic (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) or Rider (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")) )
+         Payor( Constants.ownerPayorId.equals(role) ) // Payor as owner
+         
+         Number ($policyCount : intValue()) from accumulate(Policy() from $policyList, count(1))
+        Number (intValue() == $policyCount) from accumulate( Policy(annualRegularPremiumHkd != null, productType != null), count(1))
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                     Policy( $policyLumpSum : annualRegularPremiumHkd != null, 
+                             Constants.owner.equals(currentRole), 
+                             isInforce(policyStatus) == true,
+                             productType != null,
+                             isValidProduct("ILAS","SSV3","FGS")
+                     ),
+                      sum($policyLumpSum) // all in-force 101/105 Basic
+             ) 
+          
+        // $totalApplicationLumpSum : Number( ) from accumulate ( 
+        //              Application( $applicationLumpSum : annualRegularPremiumHkd != null, 
+        //                          Constants.owner.equals(currentRole), 
+        //                          isActive(applicationStatus),
+        //                          productType != null,
+        //                          isValidProduct("ILAS","SSV3","FGS")
+        //              ),
+        //               sum($applicationLumpSum) // all active 101/105 application
+        //     )
+          
+        eval(   new BigDecimal($totalPolicyLumpSum.toString())
+                // .add(new BigDecimal($totalApplicationLumpSum.toString()))
+                .compareTo(new BigDecimal("1000000")) == 1
+        ) 
+		
+		$targetPolicyList4 : List() from accumulate (
+			$policy : Policy( 
+				annualRegularPremiumHkd != null, 
+                Constants.owner.equals(currentRole),
+                isInforce(policyStatus) == true,
+                productType != null,
+                isValidProduct ("ILAS","SSV3","FGS")
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+    then
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 1,000,000");
+        $rule9Obj.setCheckAnnualRegularPremiumProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyLumpSum.toString()));
+		$targetPolicyList.addAll($targetPolicyList4);
+        update($rule9Obj);
+end
+
+
+rule "Rule 9 - non-101/105 Product with Insured (Check Annual Regular Premium Plus Lump Sum)"
+    dialect "java"
+    when
+        ProcessObject ($policyList : policy, $appList : application)
+        $rule9Obj : Rule9Obj( checkAnnualRegularPremiumPlusProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+        exists( Basic (productType != null,
+                                 !isValidProduct("ILAS","SSV3","FGS")
+                    ) 
+                or Rider (productType != null,
+                                 !isValidProduct("ILAS","SSV3","FGS")) 
+            )
+        Payor( Constants.insuredPayorId.equals(role) ) // Payor as insured
+                
+        Number ($policyCount : intValue()) from accumulate(Policy() from $policyList, count(1))
+        Number (intValue() == $policyCount) from accumulate( Policy(annualRegularPremiumHkd != null, productType != null, lumpSumHkd != null), count(1))
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                            Policy( $policyLumpSum : lumpSumHkd != null, 
+                                    $policyAnnaulPremium : annualRegularPremiumHkd != null,
+                                    Constants.insured.equals(currentRole), 
+                                    isInforce(policyStatus) == true,
+                                    productType != null
+                            ),
+                             sum($policyLumpSum.add($policyAnnaulPremium)) // all in-force policy
+                    )
+					
+		$totalPolicyAnnualRegularPremium : Number( ) from accumulate ( 
+                            Policy(  
+                                    $policyAnnaulPremium : annualRegularPremiumHkd != null,
+                                    Constants.insured.equals(currentRole), 
+                                    isInforce(policyStatus) == true,
+                                    productType != null
+                            ),
+                             sum($policyAnnaulPremium) // all in-force policy
+                    )
+               
+        // $totalApplicationLumpSum : Number( ) from accumulate ( 
+        //                     Application( $applicationLumpSum : lumpSumHkd != null, 
+        //                                 $applicationAnnaulPremium : annualRegularPremiumHkd != null,
+        //                                 Constants.insured.equals(currentRole), 
+        //                                 isActive(applicationStatus),
+        //                                 productType != null
+        //                     ),
+        //                      sum($applicationLumpSum.add($applicationAnnaulPremium)) // all active 101/105 application
+        //             )
+                    
+        eval( 
+                new BigDecimal($totalPolicyLumpSum.toString())
+                // .add(new BigDecimal($totalApplicationLumpSum.toString()))
+                .compareTo(new BigDecimal("4000000")) == 1
+                ) 
+				
+		$targetPolicyList5 : List() from accumulate (
+			$policy : Policy( 
+				lumpSumHkd != null, 
+				annualRegularPremiumHkd != null,
+                Constants.insured.equals(currentRole),
+                isInforce(policyStatus) == true,
+                productType != null,
+                isValidProduct ("ILAS","SSV3","FGS")
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+    then
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 4,000,000");
+        $rule9Obj.setCheckAnnualRegularPremiumPlusProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyAnnualRegularPremium.toString()));
+		$targetPolicyList.addAll($targetPolicyList5);
+        update($rule9Obj);
+end
+
+rule "Rule 9 - non-101/105 Product with Owner (Check Annual Regular Premium Plus Lump Sum)"
+    when
+        ProcessObject ($policyList : policy, $appList : application)
+        $rule9Obj : Rule9Obj( checkAnnualRegularPremiumPlusProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+        Basic (productType != null,!isValidProduct("ILAS","SSV3","FGS"))
+        Number(intValue() == 0) from accumulate (Rider (productType != null,isValidProduct("ILAS","SSV3","FGS")),count(1) )
+        
+         Payor( Constants.ownerPayorId.equals(role) ) // Payor as owner
+         
+         Number ($policyCount : intValue()) from accumulate(Policy() from $policyList, count(1))
+        Number (intValue() == $policyCount) from accumulate( Policy(annualRegularPremiumHkd != null, productType != null, lumpSumHkd != null), count(1))
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                     Policy( $policyLumpSum : lumpSumHkd != null, 
+                            $policyAnnaulPremium : annualRegularPremiumHkd != null, 
+                             Constants.owner.equals(currentRole), 
+                             isInforce(policyStatus) == true,
+                             productType != null
+                     ),
+                      sum($policyLumpSum.add($policyAnnaulPremium)) // all in-force 101/105 Basic
+             ) 
+          
+        // $totalApplicationLumpSum : Number( ) from accumulate ( 
+        //              Application( $applicationLumpSum : lumpSumHkd != null, 
+        //                         $applicationAnnaulPremium : annualRegularPremiumHkd != null, 
+        //                          Constants.owner.equals(currentRole), 
+        //                          isActive(applicationStatus),
+        //                          productType != null,
+        //                          isValidProduct("ILAS","SSV3","FGS")
+        //              ),
+        //               sum($applicationLumpSum.add($applicationAnnaulPremium)) // all active 101/105 application
+        //     )
+          
+        eval(   new BigDecimal($totalPolicyLumpSum.toString())
+                // .add(new BigDecimal($totalApplicationLumpSum.toString()))
+                .compareTo(new BigDecimal("4000000")) == 1
+        ) 
+		
+		$targetPolicyList6 : List() from accumulate (
+			$policy : Policy( 
+				lumpSumHkd != null, 
+				annualRegularPremiumHkd != null,
+                Constants.owner.equals(currentRole),
+                isInforce(policyStatus) == true,
+                productType != null
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+		
+		$totalPolicyAnnualRegularPremium : Number( ) from accumulate ( 
+                     Policy( 
+                            $policyAnnaulPremium : annualRegularPremiumHkd != null, 
+                             Constants.owner.equals(currentRole), 
+                             isInforce(policyStatus) == true,
+                             productType != null
+                     ),
+                      sum($policyAnnaulPremium) // all in-force 101/105 Basic
+             ) 
+    then
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 4,000,000");
+        $rule9Obj.setCheckAnnualRegularPremiumPlusProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyAnnualRegularPremium.toString()));
+		$targetPolicyList.addAll($targetPolicyList6);
+        update($rule9Obj);
+end
+
+rule "Rule 9 - non 101/105 Product with Insured (Check Aggregate Annual Regular Premium)"
+    dialect "java"
+    when
+        
+        $rule9Obj : Rule9Obj( checkAggAnnualRegularPremiumProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+
+                Basic (productType != null,
+                                 !isValidProduct("ILAS","SSV3","FGS")) and Number(intValue() == 0) from accumulate (Rider (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")),count(1)) 
+                                 
+        Payor( Constants.insuredPayorId.equals(role) ) // Payor as insured
+        
+        ProcessObject($policyList : policy)
+        
+        Number($policyCount : intValue()) from accumulate(
+            Policy() from $policyList, count(1)
+        )
+        
+        Number(intValue() == $policyCount) from accumulate(
+            Policy(annualRegularPremiumHkd != null,productType != null),count(1)
+        )
+                
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                            Policy( $policyLumpSum : annualRegularPremiumHkd != null, 
+                                    Constants.insured.equals(currentRole), 
+                                    isInforce(policyStatus) == true,
+                                    productType != null,
+                                    !isValidProduct("ILAS","SSV3","FGS")
+                            ),
+                             sum($policyLumpSum) // all in-force 101/105 Basic
+                    )
+                    
+        //$totalApplicationLumpSum : Number( ) from accumulate ( 
+        //                    Application( $applicationLumpSum : annualRegularPremiumHkd != null, 
+        //                                Constants.insured.equals(currentRole), 
+        //                                isActive(applicationStatus),
+        //                                productType != null,
+        //                         !isValidProduct("ILAS","SSV3","FGS")
+        //                    ),
+        //                     sum($applicationLumpSum) // all active 101/105 application
+        //            )
+        $totalBasicLumpSum : Number( ) from accumulate ( 
+                            Basic( $applicationLumpSum : annualRegularPremium != null, 
+                                        // Constants.insured.equals(currentRole), 
+                                        // isActive(applicationStatus),
+                                        productType != null,
+                                 !isValidProduct("ILAS","SSV3","FGS")
+                            ),
+                             sum($applicationLumpSum) // all active 101/105 application
+                    )           
+        
+                    
+        eval( new BigDecimal($totalPolicyLumpSum.toString()).add(
+                new BigDecimal($totalBasicLumpSum.toString())).compareTo(new BigDecimal("500000")) == 1
+                )
+				
+		$targetPolicyList7 : List() from accumulate (
+			$policy : Policy(
+				annualRegularPremiumHkd != null,
+                Constants.insured.equals(currentRole),
+                isInforce(policyStatus) == true,
+                productType != null,
+				!isValidProduct("ILAS","SSV3","FGS")
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+
+    then
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 500,000");
+        $rule9Obj.setCheckAggAnnualRegularPremiumProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyLumpSum.toString()));
+		$targetPolicyList.addAll($targetPolicyList7);
+        update($rule9Obj);
+end
+
+rule "Rule 9 - non 101/105 Product with Owner (Check Aggregate Annual Regular Premium)"
+    dialect "java"
+    when
+        $rule9Obj : Rule9Obj( checkAggAnnualRegularPremiumProcessed == false, $failReasonList : failReasonList, $targetPolicyList : targetPolicyList)
+
+                Basic (productType != null,
+                                 !isValidProduct("ILAS","SSV3","FGS")) 
+                                 
+                Number(intValue() == 0) from accumulate (Rider (productType != null,
+                                 isValidProduct("ILAS","SSV3","FGS")),count(1)) 
+                                 
+        Payor( Constants.ownerPayorId.equals(role) ) // Payor as insured
+        
+        ProcessObject($policyList : policy)
+        
+        Number($policyCount : intValue()) from accumulate(
+            Policy() from $policyList, count(1)
+        )
+        
+        Number(intValue() == $policyCount) from accumulate(
+            Policy(annualRegularPremiumHkd != null,productType != null),count(1)
+        )
+                
+        $totalPolicyLumpSum : Number( ) from accumulate ( 
+                            Policy( $policyLumpSum : annualRegularPremiumHkd != null, 
+                                    Constants.owner.equals(currentRole), 
+                                    isInforce(policyStatus) == true,
+                                    productType != null,
+                                    !isValidProduct("ILAS","SSV3","FGS")
+                            ),
+                             sum($policyLumpSum) // all in-force 101/105 Basic
+                    )
+                    
+       //$totalApplicationLumpSum : Number( ) from accumulate ( 
+       //                    Application( $applicationLumpSum : annualRegularPremiumHkd != null, 
+       //                                Constants.owner.equals(currentRole), 
+       //                                isActive(applicationStatus),
+       //                                productType != null,
+       //                         !isValidProduct("ILAS","SSV3","FGS")
+       //                    ),
+       //                     sum($applicationLumpSum) // all active 101/105 application
+       //            )
+        $totalBasicLumpSum : Number( ) from accumulate ( 
+                            Basic( $applicationLumpSum : annualRegularPremium != null, 
+                                        // Constants.insured.equals(currentRole), 
+                                        // isActive(applicationStatus),
+                                        productType != null,
+                                 !isValidProduct("ILAS","SSV3","FGS")
+                            ),
+                             sum($applicationLumpSum) // all active 101/105 application
+                    )           
+        
+                    
+        eval( new BigDecimal($totalPolicyLumpSum.toString()).add(
+            //    new BigDecimal($totalApplicationLumpSum.toString())).add(
+                new BigDecimal($totalBasicLumpSum.toString())).compareTo(new BigDecimal("500000")) == 1
+                ) 
+				
+		$targetPolicyList8 : List() from accumulate (
+			$policy : Policy(
+				annualRegularPremiumHkd != null,
+                Constants.owner.equals(currentRole),
+                isInforce(policyStatus) == true,
+                productType != null,
+				!isValidProduct("ILAS","SSV3","FGS")
+            ),
+			init( List l = new ArrayList(); ),
+			action( l.add($policy) ;),
+			result ( l )
+		)
+    then
+        // System.out.println();
+        $failReasonList.add("Total Annual Regular Premium exceeds limit HKD 500,000");
+        $rule9Obj.setCheckAggAnnualRegularPremiumProcessed(true);
+		$rule9Obj.setTotalAnnualRegularPremium(new BigDecimal($totalPolicyLumpSum.toString()));
+		$targetPolicyList.addAll($targetPolicyList8);
+        update($rule9Obj);
+end
+
+rule "Rule_9 conclusion"
+    dialect "java"
+    when
+        $processObj : ProcessObject (rule9Processed == false)
+        Rule9Obj( 
+            checkAggAnnualRegularPremiumProcessed == true ||
+            checkAnnualRegularPremiumPlusProcessed == true ||
+            checkAnnualRegularPremiumProcessed == true ||
+            checkLumpSumProcessed == true,
+            $failReasonList : failReasonList,
+			$totalAnnualRegularPremium : totalAnnualRegularPremium,
+			$targetPolicyList : targetPolicyList
+        )
+        $payor : Payor()
+        $resultObj : Result( $individualResultList : individualResult)
+        $ruleObj : RuleObject( ruleNo == "9" )
+        CurrentApplication ($formId : formId)
+    then
+        $processObj.setRule9Processed(true);
+        IndividualResult $individualResult = new IndividualResult();
+        List failedReasons = $failReasonList;
+		List otherDetails = new ArrayList<OtherDetailObj>();
+		java.text.DecimalFormat df = new java.text.DecimalFormat(Constants.decimalFormatString);
+		Set<String> policyNos = new HashSet<String>();
+		String policyNoStr = "";
+		//List<Policy> policyResult = new ArrayList<Policy>();
+		
+		OtherDetailObj premium = new OtherDetailObj();
+		premium.setName("Total Annual Regular Premium");
+		premium.setValue("HKD" + df.format($totalAnnualRegularPremium));
+		otherDetails.add(premium);
+		
+		OtherDetailObj outPolicy = new OtherDetailObj();
+		outPolicy.setName("Previous Policy Number");
+				
+		for (Object policyObj : $targetPolicyList){
+			Policy policy = (Policy) policyObj;
+			if (policyNos.add(policy.getPolicyNo())){
+				policyNoStr += ","+policy.getPolicyNo();
+			}
+		}
+		
+		outPolicy.setValue(("".equals(policyNoStr))? policyNoStr : policyNoStr.substring(1));
+		otherDetails.add(outPolicy);
+				
+        if (Constants.ownerPayorId.equals($payor.getRole())){
+            OwnerIndividual ownerIndividual = new OwnerIndividual();
+            ownerIndividual.setDecision(Constants.failDecision);
+            ownerIndividual.setFailedReasons(failedReasons);
+			ownerIndividual.setOtherDetails(otherDetails);
+			
+            $individualResult.setOwnerIndividual(ownerIndividual);
+        }
+        
+        if (Constants.insuredPayorId.equals($payor.getRole())){
+            InsuredIndividual insuredIndividual = new InsuredIndividual();
+            insuredIndividual.setDecision(Constants.failDecision);
+            insuredIndividual.setFailedReasons(failedReasons);
+			insuredIndividual.setOtherDetails(otherDetails);
+			
+            $individualResult.setInsuredIndividual(insuredIndividual);
+        }
+        
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision(Constants.failDecision);
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

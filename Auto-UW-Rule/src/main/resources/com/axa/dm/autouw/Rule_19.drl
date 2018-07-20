@@ -1,0 +1,205 @@
+package com.axa.dm.autouw;
+
+
+import java.lang.Number;
+import java.util.Date;
+import java.util.Arrays;
+
+
+rule "Rule_19_init_object"
+    dialect "java"
+    when
+        not (Rule19Object())
+    then
+        //System.out.println("Rule_19_init_object");
+        Rule19Object rule19Obj = new Rule19Object();
+        rule19Obj.setApplicationNoInsuredList(new ArrayList());
+        rule19Obj.setApplicationNoOwnerList(new ArrayList());
+        rule19Obj.setApplicationStatusInsuredList(new ArrayList());
+        rule19Obj.setApplicationStatusOwnerList(new ArrayList());
+        insert(rule19Obj);
+    end
+
+rule "Current_Insured"
+    dialect "java"
+    no-loop true
+    when
+    $processObj : ProcessObject( rule19Processed == false, $policyList: policy, $applicationList: application)
+    $rule19Obj : Rule19Object(rule19InsuredProcessed == false, $applicationNoInsuredList: applicationNoInsuredList, $applicationStatusInsuredList: applicationStatusInsuredList)
+    // Product( productType in ( "WPD", "WPDD" ) , $validPlanCode : planCode)
+    Insured ($fullName: fullName)
+    ( Application ( currentRole == "INS", role == "INS")
+    or Application ( currentRole == "INS", role == "OWN", applicationStatus in ("00","01","02","04","05","06","07"), productType != null, isValidProduct("WPD","WPDD"))
+    )
+    
+    Application(applicationStatus in ("01", "02", "05", "R", "X", "Y"), lastUnderwritingDateCal.compareTo($processObj.withinPastTwoYear(lastUnderwritingDateCal)) >= 0)
+
+
+    then
+      // System.out.println("Current Insured");
+       for(int i=0; i<$applicationList.size(); i++){
+            Application a = (Application) $applicationList.get(i);
+             if(a.getCurrentRole().equalsIgnoreCase("INS") && a.getRole().equalsIgnoreCase("INS") && Arrays.asList("01", "02", "05", "R", "X", "Y").contains(a.getApplicationStatus())){
+                $applicationNoInsuredList.add(a.getApplicationNo());
+                $applicationStatusInsuredList.add(a.getApplicationStatus());
+            }
+
+            if(a.getCurrentRole().equalsIgnoreCase("INS") && a.getRole().equalsIgnoreCase("OWN") && Arrays.asList("00","01","02","04","05","06","07").contains(a.getApplicationStatus()) && a.isValidProduct("WPD","WPDD")){
+                if(Arrays.asList("01", "02", "05", "R", "X", "Y").contains(a.getApplicationStatus())){
+                    $applicationNoInsuredList.add(a.getApplicationNo());
+                    $applicationStatusInsuredList.add(a.getApplicationStatus());
+                }
+            }
+       }
+        $rule19Obj.setInsuredName($fullName);
+        $rule19Obj.setApplicationNoInsuredList($applicationNoInsuredList);
+        $rule19Obj.setRule19InsuredProcessed(true);
+        update($rule19Obj);
+end
+
+rule "Current_Owner"
+    dialect "java"
+    no-loop true
+    when
+    $processObj : ProcessObject( rule19Processed == false, $policyList: policy, $applicationList: application)
+    $rule19Obj : Rule19Object(rule19OwnerProcessed == false, $applicationNoOwnerList: applicationNoOwnerList, $applicationStatusOwnerList: applicationStatusOwnerList)
+    // Product( productType in ( "WPD", "WPDD" ) , $validPlanCode : planCode)
+    Owner ($fullName: fullName)
+    ( Application ( currentRole == "OWN", role == "INS")
+    or Application ( currentRole == "OWN", role == "OWN", applicationStatus in ("00","01","02","04","05","06","07"), productType != null, isValidProduct("WPD", "WPDD"))
+    )
+    
+    Application(applicationStatus in ("01", "02", "05", "R", "X", "Y"), lastUnderwritingDateCal.compareTo($processObj.withinPastTwoYear(lastUnderwritingDateCal)) >= 0)
+
+
+    then
+      //  System.out.println("Current Owner");
+        for(int i=0; i<$applicationList.size(); i++){
+            Application a = (Application) $applicationList.get(i);
+             if(a.getCurrentRole().equalsIgnoreCase("OWN") && a.getRole().equalsIgnoreCase("INS") && Arrays.asList("01", "02", "05", "R", "X", "Y").contains(a.getApplicationStatus())){
+                $applicationNoOwnerList.add(a.getApplicationNo());
+                $applicationStatusOwnerList.add(a.getApplicationStatus());
+            }
+
+            if(a.getCurrentRole().equalsIgnoreCase("OWN") && a.getRole().equalsIgnoreCase("OWN") && Arrays.asList("00","01","02","04","05","06","07").contains(a.getApplicationStatus()) && a.isValidProduct("WPD","WPDD")){
+                if(Arrays.asList("01", "02", "05", "R", "X", "Y").contains(a.getApplicationStatus())){
+                    $applicationNoOwnerList.add(a.getApplicationNo());
+                    $applicationStatusOwnerList.add(a.getApplicationStatus());
+                }
+            }
+       }
+        $rule19Obj.setOwnerName($fullName);
+        $rule19Obj.setApplicationNoOwnerList($applicationNoOwnerList);
+        $rule19Obj.setRule19OwnerProcessed(true);
+        update($rule19Obj);
+end
+
+
+rule "Rule_19_Final"
+    dialect "java"
+    when
+    $processObj : ProcessObject( rule19Processed == false)
+    $rule19Obj : Rule19Object( ( (rule19InsuredProcessed == true && $applicationStatusInsuredList: applicationStatusInsuredList && $applicationNoInsuredList: applicationNoInsuredList && $insuredName: insuredName) || (rule19OwnerProcessed == true && $applicationStatusOwnerList: applicationStatusOwnerList && $applicationNoOwnerList: applicationNoOwnerList && $ownerName: ownerName) )  )
+    $resultObj : Result( $individualResultList : individualResult)
+    CurrentApplication ($formId : formId)
+    $ruleObj : RuleObject( ruleNo == "19" )
+    then
+     //   System.out.println("Rule_19_Final");
+        $processObj.setRule19Processed( true );
+        
+        
+        IndividualResult $individualResult = new IndividualResult();
+        // Insured
+        if($applicationNoInsuredList.size()>0){
+            List failedReasons = new ArrayList<String>();
+            for(int i=0;i<$applicationNoInsuredList.size();i++ ){
+                String status = (String) $applicationStatusInsuredList.get(i);
+                String statusCodeDesc = "";
+                switch(status){
+                    case "01":
+                        statusCodeDesc = "Pending for more information" ;
+                    break;
+
+                    case "02":
+                        statusCodeDesc = "pending for APS";
+                    break;
+
+                    case "05":
+                        statusCodeDesc = "Pending for counter offer" ;
+                    break;
+
+                    case "R":
+                        statusCodeDesc = "Application reversal";
+                    break;
+
+                    case "X":
+                        statusCodeDesc = "Postponed";
+                    break;
+
+                    case "Y":
+                        statusCodeDesc = "Declined";
+                    break;
+                }
+                 
+                failedReasons.add("Previous application " + $applicationNoInsuredList.get(i) + " of " +  $insuredName + " has status " + statusCodeDesc + " within the past 2 years.");
+             }
+            
+            InsuredIndividual $insuredIndividual = new InsuredIndividual();
+            $insuredIndividual.setFailedReasons(failedReasons);
+            $insuredIndividual.setDecision("Fail");
+            $individualResult.setInsuredIndividual($insuredIndividual);
+        }
+
+
+        // Owner
+        if($applicationNoOwnerList.size()>0){
+            List ownerFailedReasons = new ArrayList<String>();
+            for(int i=0;i<$applicationNoOwnerList.size();i++ ){
+                String status = (String) $applicationStatusOwnerList.get(i);
+                String statusCodeDesc = "";
+                switch(status){
+                    case "01":
+                        statusCodeDesc = "Pending for more information" ;
+                    break;
+
+                    case "02":
+                        statusCodeDesc = "pending for APS";
+                    break;
+
+                    case "05":
+                        statusCodeDesc = "Pending for counter offer" ;
+                    break;
+
+                    case "R":
+                        statusCodeDesc = "Application reversal";
+                    break;
+
+                    case "X":
+                        statusCodeDesc = "Postponed";
+                    break;
+
+                    case "Y":
+                        statusCodeDesc = "Declined";
+                    break;
+                }
+                
+                ownerFailedReasons.add("Previous application " + $applicationNoOwnerList.get(i) + " of " + $ownerName + " has status " + statusCodeDesc + " within the past 2 years.");
+            }
+            
+            OwnerIndividual $ownerIndividual = new OwnerIndividual();
+            $ownerIndividual.setFailedReasons(ownerFailedReasons);
+            $ownerIndividual.setDecision("Fail");
+            $individualResult.setOwnerIndividual($ownerIndividual);
+        }
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+   
+end

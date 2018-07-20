@@ -1,0 +1,16 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "CalculateAnnualRegularPremium-Basic"
+	dialect "mvel"
+	when
+		CurrentApplication( $paymentMode : paymentMode, $currency : currency)
+		PaymentObject( $multiplier : multiplier, paymentCode == $paymentMode )
+		ExchangeRateObject( toCurrency == "HKD" , fromCurrency == $currency , $exchangeRate : exchangeRate)
+		$basic : Basic( $regularPremium : regularPremium, annualRegularPremium == null )
+	then
+		modify( $basic ) {
+				setAnnualRegularPremium( $regularPremium.multiply($multiplier).multiply($exchangeRate) )
+		}
+end

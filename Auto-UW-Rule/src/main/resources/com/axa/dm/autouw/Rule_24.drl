@@ -1,0 +1,257 @@
+package com.axa.dm.autouw;
+
+import java.util.Vector;
+
+rule "Rule_24 init object"
+    dialect "mvel"
+    when
+        not (Rule24Obj())
+    then
+        Rule24Obj $rule24Obj = new Rule24Obj();
+        $rule24Obj.setResultClaimList(new Vector());
+        $rule24Obj.setResultOwnerClaimList(new Vector());
+        insert($rule24Obj);
+end
+
+rule "Rule_24 insured - case 1"
+    dialect "java"
+    no-loop true
+    when
+        $rule24Obj : Rule24Obj($resultClaimList : resultClaimList)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal != null)
+          $claim: Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.insured.equals(currentRole),
+                Utils.workWithDates($applicationDate,"-",2,120).before(daysofDischargeCal), 
+                diagnosticCodeInList == false || surgicalCodeInList == false, 
+                claimType == "H",
+                daysofAdmissionCal != null,
+                Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24
+            )
+    then
+        // System.out.println($applicationDate);
+        $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 insured - case 2"
+    dialect "java"
+    no-loop true
+    when
+        $rule24Obj : Rule24Obj($resultClaimList : resultClaimList)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal)
+           $claim : Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.insured.equals(currentRole),
+                daysofAdmissionCal != null, daysofDischargeCal != null,
+                Utils.dateDiffinDays(daysofAdmissionCal,daysofDischargeCal) > 3 || Utils.workWithDates($applicationDate,"-",2,12).before(daysofDischargeCal), 
+                diagnosticCodeInList == true, claimType == "H",
+                daysofAdmissionCal != null,
+                Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24
+            )
+    then
+        $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 insured - case 3"
+    dialect "java"
+    no-loop true
+    when
+        $rule24Obj : Rule24Obj($resultClaimList : resultClaimList)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal)
+           $claim : Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.insured.equals(currentRole),
+                daysofAdmissionCal != null, daysofDischargeCal != null,
+                Utils.dateDiffinDays(daysofAdmissionCal,daysofDischargeCal) > 3 || Utils.workWithDates($applicationDate,"-",2,12).before(daysofDischargeCal), 
+                diagnosticCodeInList == true || surgicalCodeInList == true, claimType == "H",
+                Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24
+            )
+    then
+        $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 insured - case 4"
+    dialect "java"
+    no-loop true
+    when
+        $rule24Obj : Rule24Obj($resultClaimList : resultClaimList)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal)
+
+        $claim : Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.insured.equals(currentRole),
+                daysofAdmissionCal != null,daysofDischargeCal != null,
+                Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24,
+                Utils.dateDiffinDays(daysofAdmissionCal,daysofDischargeCal) > 7 || Utils.workWithDates($applicationDate,"-",2,12).before(daysofDischargeCal)
+            , productType != null, !isValidProduct("ME","ECARE","DI"), claimType == "H",diagnosticCodeInList == true || surgicalCodeInList == true
+        )
+    then
+        $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 owner - case 1"
+    dialect "java"
+    no-loop true
+    when
+        Rule24Obj()
+        $rule24Obj : Rule24Obj($resultClaimList : resultOwnerClaimList, resultOwnerClaimList.size() == 0)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal)
+
+        $claim :Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.owner.equals(currentRole),
+                Utils.workWithDates($applicationDate,"-",2,120).before(daysofDischargeCal), 
+                diagnosticCodeInList == false || surgicalCodeInList == false, 
+                claimType == "H",
+                daysofAdmissionCal != null,
+                Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24
+            )
+    then
+         $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 owner - case 2"
+    dialect "java"
+    no-loop true
+    when
+        $rule24Obj : Rule24Obj($resultClaimList : resultOwnerClaimList)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal)
+
+        $claim :Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.owner.equals(currentRole),
+                daysofAdmissionCal != null, daysofDischargeCal != null,
+                Utils.dateDiffinDays(daysofAdmissionCal,daysofDischargeCal) > 3 || Utils.workWithDates($applicationDate,"-",2,12).before(daysofDischargeCal), 
+                diagnosticCodeInList == true, claimType == "H",
+                Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24
+            )
+    then
+         $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 owner - case 3"
+    dialect "java"
+    no-loop true
+    when
+        $rule24Obj : Rule24Obj($resultClaimList : resultOwnerClaimList)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal)
+           $claim : Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.owner.equals(currentRole),
+                daysofAdmissionCal != null, daysofDischargeCal != null,
+                Utils.dateDiffinDays(daysofAdmissionCal,daysofDischargeCal) > 3 || Utils.workWithDates($applicationDate,"-",2,12).before(daysofDischargeCal), 
+                diagnosticCodeInList == true || surgicalCodeInList == true, claimType == "H",
+                Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24
+            )
+    then
+        $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 owner - case 4"
+    dialect "java"
+    no-loop true
+    when
+        $rule24Obj : Rule24Obj($resultClaimList : resultOwnerClaimList)
+        $processObj : ProcessObject (rule24Processed == false)
+        CurrentApplication ($applicationDate : applicationDateCal)
+
+         $claim : Claim (
+                Constants.insured.equals(role) || (Constants.owner.equals(role) && productType != null && isValidProduct("WPD","WPDD")), 
+                Constants.owner.equals(currentRole),
+                daysofAdmissionCal != null, daysofDischargeCal != null,
+                Utils.dateDiffinDays(daysofAdmissionCal,daysofDischargeCal) > 7 || Utils.workWithDates($applicationDate,"-",2,12).before(daysofDischargeCal)
+            , productType != null, !isValidProduct("ME","ECARE","DI"), claimType == "H",
+            Utils.dateDiffinMonths(daysofAdmissionCal,$applicationDate) <= 24
+        )
+    then
+        $resultClaimList.add($claim);
+        update($rule24Obj);
+end
+
+rule "Rule_24 conclusion"
+    dialect "java"
+    when
+        $processObj : ProcessObject (rule24Processed == false)
+        Rule24Obj( resultClaimList.size() > 0 || resultOwnerClaimList.size() > 0, $resultClaimList: resultClaimList, $resultOwnerClaimList : resultOwnerClaimList)
+        $resultObj : Result( $individualResultList : individualResult)
+        $ruleObj : RuleObject( ruleNo == "24" )
+        CurrentApplication ($formId : formId)
+    then
+        $processObj.setRule24Processed( true );
+        IndividualResult $individualResult = new IndividualResult();
+        
+        
+        List failedReasons = new ArrayList<String>();
+        failedReasons.add("Number of hospital claims within the last [Y] months exceeds the acceptable limit.");
+        
+        if ($resultClaimList.size() > 0){
+            InsuredIndividual $insuredIndividual = new InsuredIndividual();
+            List otherDetails = new ArrayList<OtherDetailObj>();
+            StringBuilder sb = new StringBuilder();
+            OtherDetailObj prePolicy = new OtherDetailObj();
+            
+            prePolicy.setName("Previous Policy");
+                   
+                   for (int i=0; i < $resultClaimList.size();i++){
+                       Claim tempClaim = (Claim)$resultClaimList.get(i);
+                       sb.append(tempClaim.getPolicyNo() + ", Claim Number: " + tempClaim.getClaimNumber() + ",Date of Claims Paid:" + Utils.dateDiffinDays(tempClaim.getDaysofAdmissionCal(),tempClaim.getDaysofDischargeCal()));
+                       prePolicy.setValue(sb.toString());
+                   otherDetails.add(prePolicy);
+                   }
+                   
+            
+                    $insuredIndividual.setFailedReasons(failedReasons);
+                   $insuredIndividual.setDecision(Constants.failDecision);
+                   $insuredIndividual.setOtherDetails(otherDetails);
+                   
+                   $individualResult.setInsuredIndividual($insuredIndividual);
+        }
+        
+        if ($resultOwnerClaimList.size() > 0){
+            OwnerIndividual $ownerIndividual = new OwnerIndividual();
+            List otherDetails = new ArrayList<OtherDetailObj>();
+            StringBuilder sb = new StringBuilder();
+            OtherDetailObj prePolicy = new OtherDetailObj();
+            
+            prePolicy.setName("Previous Policy");
+                   
+                   for (int i=0; i < $resultOwnerClaimList.size();i++){
+                       Claim tempClaim = (Claim)$resultOwnerClaimList.get(i);
+                       sb.append(tempClaim.getPolicyNo() + ", Claim Number: " + tempClaim.getClaimNumber() + ",Date of Claims Paid:" + Utils.dateDiffinDays(tempClaim.getDaysofAdmissionCal(),tempClaim.getDaysofDischargeCal()));
+                       prePolicy.setValue(sb.toString());
+                   otherDetails.add(prePolicy);
+                   }
+                   
+            
+                    $ownerIndividual.setFailedReasons(failedReasons);
+                   $ownerIndividual.setDecision(Constants.failDecision);
+                   $ownerIndividual.setOtherDetails(otherDetails);
+                   
+                   $individualResult.setOwnerIndividual($ownerIndividual);
+        }
+        
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision(Constants.failDecision);
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

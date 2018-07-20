@@ -1,0 +1,126 @@
+package com.axa.dm.autouw;
+
+
+import java.lang.Number;
+import java.util.Date;
+import java.util.Arrays;
+
+
+rule "Rule_26_init_object"
+    dialect "java"
+    when
+        not (Rule26Object())
+    then
+       // System.out.println("Rule_26_init_object");
+        Rule26Object rule26Obj = new Rule26Object();
+        rule26Obj.setClaimInsuredList(new ArrayList());
+        rule26Obj.setClaimOwnerList(new ArrayList());
+        rule26Obj.setPolicyNoInsuredList(new ArrayList());
+        rule26Obj.setPolicyNoOwnerList(new ArrayList());
+        
+        insert(rule26Obj);
+    end
+
+rule "Current Insured"
+    dialect "java"
+    no-loop true
+    when
+    $processObj : ProcessObject( rule26Processed == false, $claimList: claim)
+    $rule26Obj : Rule26Object(rule26InsuredProcessed == false, $claimInsuredList: claimInsuredList, $policyNoInsuredList: policyNoInsuredList)
+    Product( productType in ( "WPD", "WPDD" ) , $validPlanCode : planCode != null)
+    
+    ( Policy ( $policyNo: policyNo != null, currentRole == "INS", role == "INS")
+     or Policy ( $policyNo: policyNo != null, currentRole == "INS", role == "OWN", policyStatus in ("1","2","5","6","B","F"), planCode == $validPlanCode)
+    )
+    
+    exists(Claim(claimType.toUpperCase() in ("LI", "ELI", "DEATH"),  policyNo == $policyNo))
+    then
+        //System.out.println("Current Insured");
+        for(int i=0;i<$claimList.size();i++ ){
+             Claim c = (Claim) $claimList.get(i);
+             if(Arrays.asList("LI", "ELI", "DEATH").contains(c.getClaimType().toUpperCase()) && c.getPolicyNo().equals($policyNo) ){
+                 $claimInsuredList.add(c.getClaimType().toUpperCase());
+                 $policyNoInsuredList.add(c.getPolicyNo());
+             }
+        }
+        $rule26Obj.setRule26InsuredProcessed(true);
+        update($rule26Obj);
+end
+
+rule "Current Owner"
+    dialect "java"
+    no-loop true
+    when
+    $processObj : ProcessObject( rule26Processed == false, $claimList: claim)
+    $rule26Obj : Rule26Object(rule26OwnerProcessed == false, $claimOwnerList: claimOwnerList, $policyNoOwnerList: policyNoOwnerList)
+    Product( productType in ( "WPD", "WPDD" ) , $validPlanCode : planCode != null)
+    
+    ( Policy ( $policyNo: policyNo != null, currentRole == "OWN", role == "INS")
+     or Policy ( $policyNo: policyNo != null, currentRole == "OWN", role == "OWN", policyStatus in ("1","2","5","6","B","F"), planCode == $validPlanCode)
+    )
+    
+    exists(Claim(claimType.toUpperCase() in ("LI", "ELI", "DEATH"),  policyNo == $policyNo))
+    then
+        //System.out.println("Current Owner");
+        for(int i=0;i<$claimList.size();i++ ){
+             Claim c = (Claim) $claimList.get(i);
+             if(Arrays.asList("LI", "ELI", "DEATH").contains(c.getClaimType().toUpperCase()) && c.getPolicyNo().equals($policyNo) ){
+                 $claimOwnerList.add(c.getClaimType().toUpperCase());
+                 $policyNoOwnerList.add(c.getPolicyNo());
+             }
+        }
+        $rule26Obj.setRule26OwnerProcessed(true);
+        update($rule26Obj);
+end
+
+
+rule "Rule_26"
+	dialect "java"
+	
+	when
+        $processObj : ProcessObject( rule26Processed == false)
+        $rule26Obj : Rule26Object ( (rule26InsuredProcessed == true && $claimInsuredList: claimInsuredList && $policyNoInsuredList: policyNoInsuredList) || ( rule26OwnerProcessed == true &&  $claimOwnerList: claimOwnerList && $policyNoOwnerList: policyNoOwnerList))
+        $resultObj : Result( $individualResultList : individualResult)
+		$ruleObj : RuleObject( ruleNo == "26" )
+		CurrentApplication ($formId : formId)
+	then
+		$processObj.setRule26Processed( true );
+        // System.out.println("final");
+        
+        IndividualResult $individualResult = new IndividualResult();
+        
+        // Insured
+        if($claimInsuredList.size() ==  $policyNoInsuredList.size() && $policyNoInsuredList.size() > 0){
+            List failedReasons = new ArrayList<String>();
+            for(int i=0;i<$claimInsuredList.size();i++ ){
+                failedReasons.add("Major claim (" + $claimInsuredList.get(i) +") found in previous policy " + $policyNoInsuredList.get(i) + ".");
+            }
+            InsuredIndividual $insuredIndividual = new InsuredIndividual();
+            $insuredIndividual.setFailedReasons(failedReasons);
+            $insuredIndividual.setDecision("Fail");
+            $individualResult.setInsuredIndividual($insuredIndividual);
+        }
+        
+        // Owner
+        if($claimOwnerList.size() ==  $policyNoOwnerList.size() && $policyNoOwnerList.size() > 0){
+            List failedReasons = new ArrayList<String>();
+            for(int i=0;i<$claimOwnerList.size();i++ ){
+                failedReasons.add("Major claim (" + $claimOwnerList.get(i) +") found in previous policy " + $policyNoOwnerList.get(i) + ".");
+            }
+            OwnerIndividual $ownerIndividual = new OwnerIndividual();
+            $ownerIndividual.setFailedReasons(failedReasons);
+            $ownerIndividual.setDecision("Fail");
+            $individualResult.setOwnerIndividual($ownerIndividual);
+        }
+    
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

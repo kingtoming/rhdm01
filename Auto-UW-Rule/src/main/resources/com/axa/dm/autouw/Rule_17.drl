@@ -1,0 +1,173 @@
+package com.axa.dm.autouw;
+
+rule "Rule_17 Age >= 18"
+    dialect "java"
+    when
+        $processObj : ProcessObject (rule17Processed == false)
+        Insured (age >= 18, residencyCal == "CHINA")
+        CurrentApplication ($formId : formId)
+        //************ Current Application *****************
+         $basicCount : Number( ) from accumulate ( Basic( planCode in ("MEB1","MEH1","MEH1B")),
+                   count(1)) // current application with basic
+
+         $riderCount : (Number( ) from accumulate ( 
+                  Rider( planCode in ("MEB1","MEH1","MEH1B")
+                  ),
+                  count(1) // current application with rider
+              )
+          )
+          
+          //**************************************************
+          
+          //****************** Policy **********************
+         $policyCount : Number( ) from accumulate ( 
+                  Policy( 
+                          Constants.insured.equals(currentRole), 
+                          Constants.insured.equals(role),
+                          planCode in ("MEB1","MEH1","MEH1B")
+                  ),
+                   count(1) // Basic
+          ) 
+                   
+         $policyRiderCount : Number( ) from accumulate ( 
+                  PolicyRider( Constants.insured.equals(currentRole), Constants.insured.equals(role),
+                      planCode in ("MEB1","MEH1","MEH1B")
+                  ),
+                   count(1) // selected Policy Rider
+          ) 
+                   
+          //************************************************ 
+            
+          //***************** Application ********************       
+          $applicationCount : Number( ) from accumulate ( 
+                  Application(  
+                              Constants.insured.equals(currentRole), 
+                              Constants.insured.equals(role), 
+                              planCode in ("MEB1","MEH1","MEH1B")
+                  ),
+                   count(1) // all application
+          )
+          
+           $applicationRiderCount : Number( ) from accumulate ( 
+                  ApplicationRider( Constants.insured.equals(currentRole), Constants.insured.equals(role),
+                      planCode in ("MEB1","MEH1","MEH1B") 
+                  ),
+                   count(1) // all application rider
+            )
+            eval( 
+                $basicCount.intValue() + 
+                $riderCount.intValue() + 
+                $policyCount.intValue() + 
+                $policyRiderCount.intValue() + 
+                $applicationCount.intValue() + 
+                $applicationRiderCount.intValue() > 1
+            )
+            $resultObj : Result( $individualResultList : individualResult)
+            $ruleObj : RuleObject( ruleNo == "17" )
+          //**************************************************
+    then
+        $processObj.setRule17Processed(true);
+        IndividualResult $individualResult = new IndividualResult();
+        InsuredIndividual $insuredIndividual = new InsuredIndividual();
+        List failedReasons = new ArrayList<String>();
+        failedReasons.add("Proposed Insured fails the Maximum Medical Coverage (for MCV)");
+        $insuredIndividual.setFailedReasons(failedReasons);
+        $insuredIndividual.setDecision(Constants.failDecision);
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision(Constants.failDecision);
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);       
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end
+
+
+rule "Rule_17 Age < 18"
+    dialect "java"
+    when
+        $processObj : ProcessObject (rule17Processed == false)
+        Insured (age < 18, residencyCal == "CHINA")
+        CurrentApplication ($formId : formId)
+        //************ Current Application *****************
+         $basicCount : Number( ) from accumulate ( Basic( planCode in ("MEB1","MEH1","MEH1B")),
+                   count(1)) // current application with basic
+
+        //  $riderCount : (Number( ) from accumulate ( 
+        //           Rider( planCode in ("MEB1","MEH1","MEH1B")
+        //           ),
+        //           count(1) // current application with rider
+        //       )
+        //   )
+          
+          //**************************************************
+          
+          //****************** Policy **********************
+         $policyCount : Number( ) from accumulate ( 
+                  Policy( 
+                          Constants.insured.equals(currentRole), 
+                          Constants.insured.equals(role),
+                          planCode in ("MEB1","MEH1","MEH1B")
+                  ),
+                   count(1) // Basic
+          ) 
+                   
+        //  $policyRiderCount : Number( ) from accumulate ( 
+        //           PolicyRider( Constants.insured.equals(currentRole), Constants.insured.equals(role),
+        //               planCode in ("MEB1","MEH1","MEH1B")
+        //           ),
+        //           count(1) // selected Policy Rider
+        //   ) 
+                   
+          //************************************************ 
+            
+          //***************** Application ********************       
+          $applicationCount : Number( ) from accumulate ( 
+                  Application(  
+                              Constants.insured.equals(currentRole), 
+                              Constants.insured.equals(role), 
+                              planCode in ("MEB1","MEH1","MEH1B")
+                  ),
+                   count(1) // all application
+          )
+          
+        //   $applicationRiderCount : Number( ) from accumulate ( 
+        //           ApplicationRider( Constants.insured.equals(currentRole), Constants.insured.equals(role),
+        //               planCode in ("MEB1","MEH1","MEH1B") 
+        //           ),
+        //           count(1) // all application rider
+        //     )
+            eval( 
+                $basicCount.intValue() + 
+                // $riderCount.intValue() + 
+                $policyCount.intValue() + 
+                // $policyRiderCount.intValue() + 
+                $applicationCount.intValue() > 1
+            )
+            $resultObj : Result( $individualResultList : individualResult)
+            $ruleObj : RuleObject( ruleNo == "17" )
+          //**************************************************
+    then
+        $processObj.setRule17Processed(true);
+        IndividualResult $individualResult = new IndividualResult();
+        InsuredIndividual $insuredIndividual = new InsuredIndividual();
+        List failedReasons = new ArrayList<String>();
+        failedReasons.add("Proposed Insured fails the Maximum Medical Coverage (for MCV)");
+        $insuredIndividual.setFailedReasons(failedReasons);
+        $insuredIndividual.setDecision(Constants.failDecision);
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision(Constants.failDecision);
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);       
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

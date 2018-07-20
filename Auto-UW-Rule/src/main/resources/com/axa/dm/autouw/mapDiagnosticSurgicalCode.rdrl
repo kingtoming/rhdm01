@@ -1,0 +1,14 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "mapDiagnosticSurgicalCode"
+	dialect "mvel"
+	when
+		$claim : Claim( $diagnosticcode : diagnosticcode, $surgicalcodes : surgicalcodes, codeInList == false )
+		DiagnosticSurgicalObject( code == $diagnosticcode , code == $surgicalcodes )
+	then
+		modify( $claim ) {
+				setCodeInList( true )
+		}
+end

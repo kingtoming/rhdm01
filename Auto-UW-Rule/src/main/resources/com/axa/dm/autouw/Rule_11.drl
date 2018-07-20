@@ -1,0 +1,157 @@
+package com.axa.dm.autouw;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.lang.StringBuilder;
+
+
+rule "Compare Annual Income VS Annual Regular Premium of Rule 11"    
+    dialect "java"
+    when
+        CurrentApplication ($formId : formId)
+        $processObj : ProcessObject (rule11Processed == false, $policyList : policy, $applicationList : application)
+        // ExchangeRateObject(toCurrency == "USD", fromCurrency == "HKD", $exchangeRate : exchangeRate)
+        $ruleObj : RuleObject( ruleNo == "11")
+        Result ($individualResultList : individualResult)
+        Payor($occupationClass : occupationClass in ("4","6","7"), $role : role != null, $occupation : occupation )
+        
+        Number ($policyCount : intValue()) from accumulate(
+            Policy() from $policyList,count(1)
+        )
+        
+        Number (intValue() == $policyCount) from accumulate(
+            Policy(annualRegularPremiumHkd != null), count(1)
+        )
+        
+        $policyAnnualRegularPremium : Number( ) from accumulate ( 
+            Policy( 
+                $annualRegularPremium : annualRegularPremiumHkd != null,
+                Constants.owner.equals(currentRole),
+                isInforce(policyStatus)
+            ),
+            sum($annualRegularPremium)
+        )   
+                             
+        Number ($appCount : intValue()) from accumulate(
+            Application() from $applicationList,count(1)
+        )
+        
+        Number (intValue() == $appCount) from accumulate(
+            Application(annualRegularPremiumHkd != null), count(1)
+        )
+        
+        $applicationAnnualRegularPremium : Number( ) from accumulate ( 
+            Application( 
+                $annualRegularPremium : annualRegularPremiumHkd != null,
+                Constants.owner.equals(currentRole)
+                ,isActive(applicationStatus)
+            ),
+            sum($annualRegularPremium)
+        )
+        $basicAnnualRegularPremium : Number( ) from accumulate ( Basic( $annualRegularPremium : annualRegularPremium != null),
+                             sum($annualRegularPremium))
+        eval(new BigDecimal($applicationAnnualRegularPremium.toString()).add(new BigDecimal($policyAnnualRegularPremium.toString())).add(new BigDecimal($basicAnnualRegularPremium.toString())).compareTo(new BigDecimal("1000000")) == 1)
+    then
+        $processObj.setRule11Processed( true );
+        IndividualResult $individualResult = new IndividualResult();
+        List failedReasons = new ArrayList<String>();
+        List otherDetails = new ArrayList<OtherDetailObj>();
+        InsuredIndividual insuredIndividual = null;
+        OwnerIndividual ownerIndividual = null;
+        StringBuilder sb = null;
+        StringBuilder sb2 = null;
+        java.text.DecimalFormat df = new java.text.DecimalFormat(Constants.decimalFormatString);
+        BigDecimal totalSi = new BigDecimal($applicationAnnualRegularPremium.toString())
+                                .add(new BigDecimal($policyAnnualRegularPremium.toString()))
+                                .add(new BigDecimal($basicAnnualRegularPremium.toString()));
+        
+        failedReasons.add("Total Premium exceeds the limit for Non income group.");
+        
+        OtherDetailObj occupation = new OtherDetailObj();
+        occupation.setName("Occupation");
+        occupation.setValue($occupation);
+        otherDetails.add(occupation);
+        
+        OtherDetailObj occupationClass = new OtherDetailObj();
+        occupationClass.setName("Occupation Class");
+        occupationClass.setValue($occupationClass);
+        otherDetails.add(occupationClass);
+        
+        OtherDetailObj totalPremium = new OtherDetailObj();
+        totalPremium.setName("Total Premium");
+        totalPremium.setValue("HKD" + df.format(totalSi));
+        otherDetails.add(totalPremium);
+        
+        OtherDetailObj policy = new OtherDetailObj();
+        sb = new StringBuilder();
+        policy.setName("Previous Policy Number");
+        
+        if ($policyList != null){
+        for (int i=0;i < $policyList.size();i++){
+             Policy tempPolicy = (Policy) $policyList.get(i);
+             
+             if (
+                tempPolicy.isInforce(tempPolicy.getPolicyStatus())
+                && Constants.owner.equals(tempPolicy.getCurrentRole())
+             )
+                sb.append(tempPolicy.getPolicyNo());
+                
+            if (i < $policyList.size() - 1)
+                sb.append(",");
+        }
+        }
+        
+        policy.setValue(sb.toString());
+        otherDetails.add(policy);
+        
+        OtherDetailObj application = new OtherDetailObj();
+        sb2 = new StringBuilder();
+        application.setName("Previous Application Number");
+        
+        if ($applicationList != null){
+        for (int i=0;i < $applicationList.size();i++){
+             Application tempApplication = (Application) $applicationList.get(i);
+             
+             if (
+                tempApplication.isActive(tempApplication.getApplicationStatus())
+                && Constants.owner.equals(tempApplication.getCurrentRole())
+             )
+                sb2.append(tempApplication.getApplicationNo());
+                
+            if (i < $applicationList.size() - 1)
+                sb2.append(",");
+        }
+        }
+        
+        application.setValue(sb2.toString());
+        otherDetails.add(application);
+                   
+        if(Constants.ownerPayorId.equals($role)){
+                ownerIndividual = new OwnerIndividual();
+                ownerIndividual.setDecision(Constants.failDecision);
+                ownerIndividual.setFailedReasons(failedReasons);
+                ownerIndividual.setOtherDetails(otherDetails);
+                $individualResult.setOwnerIndividual(ownerIndividual);
+        }
+        
+        if(Constants.insuredPayorId.equals($role)){
+                insuredIndividual = new InsuredIndividual();
+                insuredIndividual.setDecision(Constants.failDecision);
+                insuredIndividual.setFailedReasons(failedReasons);
+                insuredIndividual.setOtherDetails(otherDetails);
+                $individualResult.setInsuredIndividual(insuredIndividual);
+        }
+        
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision(Constants.failDecision);
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        
+        $individualResultList.add( $individualResult );
+        
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+    end

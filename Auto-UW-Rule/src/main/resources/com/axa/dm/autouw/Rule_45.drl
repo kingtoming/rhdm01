@@ -1,0 +1,724 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Date;
+
+rule "Rule_45 init"
+    dialect "java"
+    when
+        not Rule45Obj()
+    then
+        insert(new Rule45Obj());
+end
+
+rule "Rule_45 insured"
+          dialect "java"
+          when
+                $rule45Obj : Rule45Obj()
+                   $processObj : ProcessObject( rule45Processed == false, $policyList : policy, $policyRiderList : policyRider, $applicationList:application, $applicationRiderList : applicationRider )
+                   CurrentApplication ($riderList : rider, $formId : formId, $policyLocationCode:policyLocationCode in ("MCP","MCG"))
+                    // $insured : Insured( $maxLifeSumInsured : maxLifeSumInsuredUsd != null )
+                    $insured : Insured()
+                  ExchangeRateObject( fromCurrency == "HKD", toCurrency == "USD", $exchangeRate : exchangeRate)
+                  exists( 
+                      Basic( 
+                          productType != null,
+                          isValidProduct (
+                                            "SML"
+                                            ) 
+                        ) 
+                        or 
+                        Rider( 
+                            productType != null,
+                            isValidProduct (
+                                          "WP","SML"
+                            ) 
+                        )
+                    )
+                    
+                    //************ Current Application *****************
+                  $totalBasicSumInsured : Number( ) from accumulate ( 
+                      Basic( $basicSumInsured : sumInsuredHkd != null, $finLimit45 : finLimit45 != null,
+                      productType != null, isValidProduct("WP")),
+                             sum($basicSumInsured.multiply($finLimit45).multiply($exchangeRate))) // current application with basic
+                
+                Number($riderCount : intValue()) from accumulate (
+                    Rider() from $riderList, count(1)
+                )
+                
+                Number(intValue() == $riderCount) from accumulate(
+                    Rider( $riderSumInsured : sumInsuredHkd != null, $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                  $totalRiderSumInsured : (Number( ) from accumulate ( 
+                            Rider( $riderSumInsured : sumInsuredHkd != null, $finLimit45 : finLimit45 != null,
+                            productType != null, isValidProduct("WP")
+                            ),
+                            sum($riderSumInsured.multiply($finLimit45).multiply($exchangeRate)) // current application with rider
+                        )
+                    )
+                    
+                    //**************************************************
+                    
+                    //****************** Policy **********************
+                Number($policyCount : intValue()) from accumulate (
+                    Policy() from $policyList, count(1)
+                )
+                
+                Number(intValue() == $policyCount) from accumulate(
+                    Policy( 
+                          $policySumInsured : sumInsuredHkd != null, 
+                          $finLimit45 : finLimit45 != null),count(1)
+                )
+                
+                  $totalPolicySumInsured : Number( ) from accumulate ( 
+                      Policy( 
+                          $policySumInsured : sumInsuredHkd != null, 
+                          productType != null, isValidProduct("WP","SML"),
+                          Constants.insured.equals(currentRole), 
+                          Constants.insured.equals(role), 
+                          isInforce(policyStatus) == true, $finLimit45 : finLimit45 != null),
+                             sum($policySumInsured.multiply($finLimit45).multiply($exchangeRate)) // all in-force Basic
+                    ) 
+                    
+                Number($policyRiderCount : intValue()) from accumulate (
+                    PolicyRider() from $policyRiderList, count(1)
+                )
+                
+                Number(intValue() == $policyRiderCount) from accumulate(
+                    PolicyRider( 
+                                $policyRiderSumInsured : sumInsuredHkd != null, 
+                                $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                             
+                  $totalPolicyRiderSumInsured : Number( ) from accumulate ( 
+                            PolicyRider( 
+                                $policyRiderSumInsured : sumInsuredHkd != null, 
+                                productType != null, isValidProduct("WP","SML"),
+                                Constants.insured.equals(currentRole), 
+                                Constants.insured.equals(role), 
+                                "".equals(riderStatus.trim()),
+                                $finLimit45 : finLimit45 != null
+                            ),
+                             sum($policyRiderSumInsured.multiply($finLimit45).multiply($exchangeRate)) // selected in-force Policy Rider
+                    ) 
+                             
+                    //************************************************ 
+                      
+                    //***************** Application ********************       
+                Number($appCount : intValue()) from accumulate (
+                    Application() from $applicationList, count(1)
+                )
+                
+                Number(intValue() == $appCount) from accumulate(
+                    Application( 
+                                $applicationSumInsured : sumInsuredHkd != null, 
+                                $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                    
+                    $totalApplicationSumInsured : Number( ) from accumulate ( 
+                            Application( 
+                                $applicationSumInsured : sumInsuredHkd != null, 
+                                productType != null, isValidProduct("WP"),
+                                Constants.insured.equals(currentRole), 
+                                Constants.insured.equals(role), 
+                                isActive(applicationStatus),
+                                $finLimit45 : finLimit45 != null
+                            ),
+                             sum($applicationSumInsured.multiply($finLimit45).multiply($exchangeRate)) // all active application
+                    )
+                    
+                    Number($appRiderCount : intValue()) from accumulate (
+                    ApplicationRider() from $applicationRiderList, count(1)
+                )
+                
+                Number(intValue() == $appRiderCount) from accumulate(
+                    ApplicationRider( 
+                                $applicationRiderSumInsured : sumInsuredHkd != null, 
+                                $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                
+                     $totalApplicationRiderSumInsured : Number( ) from accumulate ( 
+                            ApplicationRider( 
+                                $applicationRiderSumInsured : sumInsuredHkd != null, 
+                                productType != null, isValidProduct("WP"),
+                                Constants.insured.equals(currentRole), 
+                                Constants.insured.equals(role), 
+                                isActive(applicationStatus),
+                                $finLimit45 : finLimit45 != null
+                            ),
+                             sum($applicationRiderSumInsured.multiply($finLimit45).multiply($exchangeRate)) // all active application rider
+                    )
+                    
+                    
+                    //**************************************************
+                    
+                  eval ( 
+                      new BigDecimal($totalPolicySumInsured.toString()).add(
+                      new BigDecimal($totalPolicyRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalMbPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalApplicationMbRiderSumInsured.toString())).add(
+                      new BigDecimal($totalBasicSumInsured.toString())).add(
+                      new BigDecimal($totalRiderSumInsured.toString())).compareTo(new BigDecimal("1500000")) == 1 
+                    )
+                    
+
+                 
+          then
+                //   $processObj.setRule45Processed( true );
+                $rule45Obj.setIsInsured(true);
+                  BigDecimal $totalSi = new BigDecimal($totalPolicySumInsured.toString()).add(
+                      new BigDecimal($totalPolicyRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalMbPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalApplicationMbRiderSumInsured.toString())).add(
+                      new BigDecimal($totalBasicSumInsured.toString())).add(
+                      new BigDecimal($totalRiderSumInsured.toString()));
+                      
+                    //   System.out.println($totalSi);
+                   
+                  InsuredIndividual $insuredIndividual = new InsuredIndividual();
+
+                  java.text.DecimalFormat df = new java.text.DecimalFormat(Constants.decimalFormatString);
+                  List failedReasons = new ArrayList<String>();
+                  List otherDetails = new ArrayList<OtherDetailObj>();
+                  int increment = 0;
+                   
+                  OtherDetailObj stationCode = new OtherDetailObj();
+                  stationCode.setName("Station Code");
+                  stationCode.setValue($policyLocationCode);
+                  otherDetails.add(stationCode);
+                  
+                  OtherDetailObj preApp2 = new OtherDetailObj();
+                  preApp2.setName("Previous Application");
+                  preApp2.setValue("");
+                  otherDetails.add(preApp2);
+                  
+                  if ($applicationList != null){
+                  for (int i=0;i < $applicationList.size();i++){
+                      OtherDetailObj app = new OtherDetailObj();
+                      Application tempApp = (Application) $applicationList.get(i);
+                      if (
+                        Constants.insured.equals(tempApp.getCurrentRole()) 
+                        && Constants.insured.equals(tempApp.getRole())
+                        && tempApp.isActive(tempApp.getApplicationStatus())
+                        && tempApp.isValidProduct("WP")
+                      ){
+                        increment++;
+                        app.setName("(" + increment + ")");
+                        app.setValue(tempApp.getApplicationNo() + ";" + tempApp.getProductSeriesConcat() + ";" + tempApp.getCurrency() + df.format(tempApp.getSumInsured()));
+                        otherDetails.add(app);
+                      }
+                  }
+                  }
+                  
+                  if ($applicationRiderList != null){
+                  for (int i=0;i < $applicationRiderList.size();i++){
+                      OtherDetailObj appRider = new OtherDetailObj();
+                      ApplicationRider tempAppRider = (ApplicationRider) $applicationRiderList.get(i);
+                      
+                      if (
+                        Constants.insured.equals(tempAppRider.getCurrentRole()) 
+                        && Constants.insured.equals(tempAppRider.getRole())
+                        && tempAppRider.isActive(tempAppRider.getApplicationStatus())
+                        && tempAppRider.isValidProduct("WP")
+                      ){
+                        increment++;
+                        appRider.setName("(" + increment + ")");
+                        appRider.setValue(tempAppRider.getApplicationNo() + ";" + tempAppRider.getProductSeriesConcat() + ";" + tempAppRider.getCurrency() + df.format(tempAppRider.getSumInsured()));
+                        otherDetails.add(appRider);
+                      }
+                  }
+                  }
+                  
+                  OtherDetailObj details = new OtherDetailObj();
+                  details.setName("Details of previous policy/ application with WP rider");
+                  details.setValue("");
+                  otherDetails.add(details);
+                   
+                  OtherDetailObj totalSiObj = new OtherDetailObj();
+                  totalSiObj.setName("Total SI");
+                  totalSiObj.setValue("USD"+df.format($totalSi));
+                  otherDetails.add(totalSiObj);
+                   
+                  OtherDetailObj prePolicy = new OtherDetailObj();
+                  prePolicy.setName("Previous Policy");
+                  prePolicy.setValue("");
+                  otherDetails.add(prePolicy);
+                   
+                  increment = 0;
+                  
+                  if ($policyList != null){
+                  for (int i=0;i < $policyList.size();i++){
+                      OtherDetailObj policy = new OtherDetailObj();
+                      Policy tempPolicy = (Policy) $policyList.get(i);
+                      if (
+                        Constants.insured.equals(tempPolicy.getCurrentRole()) 
+                        && Constants.insured.equals(tempPolicy.getRole())
+                        && tempPolicy.isInforce(tempPolicy.getPolicyStatus())
+                        && tempPolicy.isValidProduct("WP","SML")
+                      ){
+                        increment++;
+                        policy.setName("(" + increment + ")");
+                        policy.setValue(tempPolicy.getPolicyNo() + ";" + tempPolicy.getProductSeriesConcat() + ";" + tempPolicy.getCurrency() + df.format(tempPolicy.getSumInsured()));
+                        otherDetails.add(policy);
+                      }
+                  }
+                  }
+                  
+                  if ($policyRiderList != null){
+                    for (int i=0;i < $policyRiderList.size();i++){
+                        OtherDetailObj policyRider = new OtherDetailObj();
+                        PolicyRider tempPolicyRider = (PolicyRider) $policyRiderList.get(i);
+                        if (
+                            Constants.insured.equals(tempPolicyRider.getCurrentRole()) 
+                            && Constants.insured.equals(tempPolicyRider.getRole())
+                            && "".equals(tempPolicyRider.getRiderStatus())
+                            && tempPolicyRider.isValidProduct("WP","SML")
+                        ){
+                          increment++;
+                          policyRider.setName("(" + increment + ")");
+                          policyRider.setValue(tempPolicyRider.getPolicyNo() + ";" + tempPolicyRider.getProductSeriesConcat() + ";" + tempPolicyRider.getCurrency() + df.format(tempPolicyRider.getSumInsured()));
+                          otherDetails.add(policyRider);
+                        }
+                    }
+                  }
+                   
+                  OtherDetailObj preApp = new OtherDetailObj();
+                  preApp.setName("Previous Application");
+                  preApp.setValue("");
+                  otherDetails.add(preApp);
+                   
+                  increment = 0;
+                  
+                  if ($applicationList != null){
+                  for (int i=0;i < $applicationList.size();i++){
+                      OtherDetailObj app = new OtherDetailObj();
+                      Application tempApp = (Application) $applicationList.get(i);
+                      if (
+                        Constants.insured.equals(tempApp.getCurrentRole()) 
+                        && Constants.insured.equals(tempApp.getRole())
+                        && tempApp.isActive(tempApp.getApplicationStatus())
+                        && tempApp.isValidProduct("WP")
+                      ){
+                        increment++;
+                        app.setName("(" + increment + ")");
+                        app.setValue(tempApp.getApplicationNo() + ";" + tempApp.getProductSeriesConcat() + ";" + tempApp.getCurrency() + df.format(tempApp.getSumInsured()));
+                        otherDetails.add(app);
+                      }
+                  }
+                  }
+                  
+                  
+                  if ($applicationRiderList != null){
+                  for (int i=0;i < $applicationRiderList.size();i++){
+                      OtherDetailObj appRider = new OtherDetailObj();
+                      ApplicationRider tempAppRider = (ApplicationRider) $applicationRiderList.get(i);
+                      
+                      if (
+                        Constants.insured.equals(tempAppRider.getCurrentRole()) 
+                        && Constants.insured.equals(tempAppRider.getRole())
+                        && tempAppRider.isActive(tempAppRider.getApplicationStatus())
+                        && tempAppRider.isValidProduct("WP")
+                      ){
+                        increment++;
+                        appRider.setName("(" + increment + ")");
+                        appRider.setValue(tempAppRider.getApplicationNo() + ";" + tempAppRider.getProductSeriesConcat() + ";" + tempAppRider.getCurrency() + df.format(tempAppRider.getSumInsured()));
+                        otherDetails.add(appRider);
+                      }
+                  }
+                  }
+                   
+                  failedReasons.add( "Total WP SI exceeds maximum limit USD 1,500,000");
+                   
+                  // ******* Prepare InsuredIndividual *********
+                  $insuredIndividual.setFailedReasons(failedReasons);
+                  $insuredIndividual.setDecision(Constants.failDecision);
+                  $insuredIndividual.setOtherDetails(otherDetails);
+                   
+                  // *******************************************
+                   
+                  $rule45Obj.setInsuredIndividual($insuredIndividual);
+                update($rule45Obj);
+                
+end
+// ******************************************************************************************************************************************
+rule "Rule_45 owner"
+          dialect "java"
+          when
+                $rule45Obj : Rule45Obj()
+                   $processObj : ProcessObject( rule45Processed == false, $policyList : policy, $policyRiderList : policyRider, $applicationList:application, $applicationRiderList : applicationRider )
+                   CurrentApplication ($riderList : rider, $formId : formId, $policyLocationCode:policyLocationCode in ("MCP","MCG"))
+                    // $insured : Insured( $maxLifeSumInsured : maxLifeSumInsuredUsd != null )
+
+                  ExchangeRateObject( fromCurrency == "HKD", toCurrency == "USD", $exchangeRate : exchangeRate)
+                  exists( 
+                      Basic( 
+                          productType != null,
+                          isValidProduct (
+                                            "SML"
+                                            ) 
+                        ) 
+                        or 
+                        Rider( 
+                            productType != null,
+                            isValidProduct (
+                                          "WP","SML"
+                            ) 
+                        )
+                    )
+                    
+                    Rider( 
+                            planCode matches "WPD(.*)" || planCode matches "WPDD(.*)" 
+                        )
+                    
+                    //************ Current Application *****************
+                  $totalBasicSumInsured : Number( ) from accumulate ( 
+                      Basic( $basicSumInsured : sumInsuredHkd != null, $finLimit45 : finLimit45 != null,
+                      productType != null, isValidProduct("WP")),
+                             sum($basicSumInsured.multiply($finLimit45).multiply($exchangeRate))) // current application with basic
+                
+                Number($riderCount : intValue()) from accumulate (
+                    Rider() from $riderList, count(1)
+                )
+                
+                Number(intValue() == $riderCount) from accumulate(
+                    Rider( $riderSumInsured : sumInsuredHkd != null, $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                  $totalRiderSumInsured : (Number( ) from accumulate ( 
+                            Rider( $riderSumInsured : sumInsuredHkd != null, $finLimit45 : finLimit45 != null,
+                            productType != null, isValidProduct("WP")
+                            ),
+                            sum($riderSumInsured.multiply($finLimit45).multiply($exchangeRate)) // current application with rider
+                        )
+                    )
+                    
+                    //**************************************************
+                    
+                    //****************** Policy **********************
+                Number($policyCount : intValue()) from accumulate (
+                    Policy() from $policyList, count(1)
+                )
+                
+                Number(intValue() == $policyCount) from accumulate(
+                    Policy( 
+                          $policySumInsured : sumInsuredHkd != null, 
+                          $finLimit45 : finLimit45 != null),count(1)
+                )
+                
+                  $totalPolicySumInsured : Number( ) from accumulate ( 
+                      Policy( 
+                          $policySumInsured : sumInsuredHkd != null, 
+                          productType != null, isValidProduct("WP","SML"),
+                          Constants.owner.equals(currentRole), 
+                          Constants.insured.equals(role), 
+                          isInforce(policyStatus) == true, $finLimit45 : finLimit45 != null),
+                             sum($policySumInsured.multiply($finLimit45).multiply($exchangeRate)) // all in-force Basic
+                    ) 
+                    
+                Number($policyRiderCount : intValue()) from accumulate (
+                    PolicyRider() from $policyRiderList, count(1)
+                )
+                
+                Number(intValue() == $policyRiderCount) from accumulate(
+                    PolicyRider( 
+                                $policyRiderSumInsured : sumInsuredHkd != null, 
+                                $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                             
+                  $totalPolicyRiderSumInsured : Number( ) from accumulate ( 
+                            PolicyRider( 
+                                $policyRiderSumInsured : sumInsuredHkd != null, 
+                                productType != null, isValidProduct("WP","SML"),
+                                Constants.owner.equals(currentRole), 
+                                Constants.insured.equals(role), 
+                                "".equals(riderStatus.trim()),
+                                $finLimit45 : finLimit45 != null
+                            ),
+                             sum($policyRiderSumInsured.multiply($finLimit45).multiply($exchangeRate)) // selected in-force Policy Rider
+                    ) 
+                             
+                    //************************************************ 
+                      
+                    //***************** Application ********************       
+                Number($appCount : intValue()) from accumulate (
+                    Application() from $applicationList, count(1)
+                )
+                
+                Number(intValue() == $appCount) from accumulate(
+                    Application( 
+                                $applicationSumInsured : sumInsuredHkd != null, 
+                                $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                    
+                    $totalApplicationSumInsured : Number( ) from accumulate ( 
+                            Application( 
+                                $applicationSumInsured : sumInsuredHkd != null, 
+                                productType != null, isValidProduct("WP"),
+                                Constants.owner.equals(currentRole), 
+                                Constants.insured.equals(role), 
+                                isActive(applicationStatus),
+                                $finLimit45 : finLimit45 != null
+                            ),
+                             sum($applicationSumInsured.multiply($finLimit45).multiply($exchangeRate)) // all active application
+                    )
+                    
+                    Number($appRiderCount : intValue()) from accumulate (
+                    ApplicationRider() from $applicationRiderList, count(1)
+                )
+                
+                Number(intValue() == $appRiderCount) from accumulate(
+                    ApplicationRider( 
+                                $applicationRiderSumInsured : sumInsuredHkd != null, 
+                                $finLimit45 : finLimit45 != null
+                    ),count(1)
+                )
+                
+                     $totalApplicationRiderSumInsured : Number( ) from accumulate ( 
+                            ApplicationRider( 
+                                $applicationRiderSumInsured : sumInsuredHkd != null, 
+                                productType != null, isValidProduct("WP"),
+                                Constants.owner.equals(currentRole), 
+                                Constants.insured.equals(role), 
+                                isActive(applicationStatus),
+                                $finLimit45 : finLimit45 != null
+                            ),
+                             sum($applicationRiderSumInsured.multiply($finLimit45).multiply($exchangeRate)) // all active application rider
+                    )
+                    
+                    
+                    //**************************************************
+                    
+                  eval ( 
+                      new BigDecimal($totalPolicySumInsured.toString()).add(
+                      new BigDecimal($totalPolicyRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalMbPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalApplicationMbRiderSumInsured.toString())).add(
+                      new BigDecimal($totalBasicSumInsured.toString())).add(
+                      new BigDecimal($totalRiderSumInsured.toString())).compareTo(new BigDecimal("1500000")) == 1 
+                    )
+                    
+
+                 
+          then
+                //   $processObj.setRule45Processed( true );
+                $rule45Obj.setIsOwner(true);
+                  BigDecimal $totalSi = new BigDecimal($totalPolicySumInsured.toString()).add(
+                      new BigDecimal($totalPolicyRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalMbPolicyRiderSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationSumInsured.toString())).add(
+                      new BigDecimal($totalApplicationRiderSumInsured.toString())).add(
+                    //   new BigDecimal($totalApplicationMbRiderSumInsured.toString())).add(
+                      new BigDecimal($totalBasicSumInsured.toString())).add(
+                      new BigDecimal($totalRiderSumInsured.toString()));
+                      
+                    //   System.out.println($totalSi);
+                   
+                  OwnerIndividual $ownerIndividual = new OwnerIndividual();
+
+                  java.text.DecimalFormat df = new java.text.DecimalFormat(Constants.decimalFormatString);
+                  List failedReasons = new ArrayList<String>();
+                  List otherDetails = new ArrayList<OtherDetailObj>();
+                  int increment = 0;
+                   
+                  OtherDetailObj stationCode = new OtherDetailObj();
+                  stationCode.setName("Station Code");
+                  stationCode.setValue($policyLocationCode);
+                  otherDetails.add(stationCode);
+                  
+                  OtherDetailObj preApp2 = new OtherDetailObj();
+                  preApp2.setName("Previous Application");
+                  preApp2.setValue("");
+                  otherDetails.add(preApp2);
+                  
+                  if ($applicationList != null){
+                  for (int i=0;i < $applicationList.size();i++){
+                      OtherDetailObj app = new OtherDetailObj();
+                      Application tempApp = (Application) $applicationList.get(i);
+                      if (
+                        Constants.owner.equals(tempApp.getCurrentRole()) 
+                        && Constants.insured.equals(tempApp.getRole())
+                        && tempApp.isActive(tempApp.getApplicationStatus())
+                        && tempApp.isValidProduct("WP")
+                      ){
+                        increment++;
+                        app.setName("(" + increment + ")");
+                        app.setValue(tempApp.getApplicationNo() + ";" + tempApp.getProductSeriesConcat() + ";" + tempApp.getCurrency() + df.format(tempApp.getSumInsured()));
+                        otherDetails.add(app);
+                      }
+                  }
+                  }
+                  
+                  if ($applicationRiderList != null){
+                  for (int i=0;i < $applicationRiderList.size();i++){
+                      OtherDetailObj appRider = new OtherDetailObj();
+                      ApplicationRider tempAppRider = (ApplicationRider) $applicationRiderList.get(i);
+                      
+                      if (
+                        Constants.owner.equals(tempAppRider.getCurrentRole()) 
+                        && Constants.insured.equals(tempAppRider.getRole())
+                        && tempAppRider.isActive(tempAppRider.getApplicationStatus())
+                        && tempAppRider.isValidProduct("WP")
+                      ){
+                        increment++;
+                        appRider.setName("(" + increment + ")");
+                        appRider.setValue(tempAppRider.getApplicationNo() + ";" + tempAppRider.getProductSeriesConcat() + ";" + tempAppRider.getCurrency() + df.format(tempAppRider.getSumInsured()));
+                        otherDetails.add(appRider);
+                      }
+                  }
+                  }
+                  
+                  OtherDetailObj details = new OtherDetailObj();
+                  details.setName("Details of previous policy/ application with WP rider");
+                  details.setValue("");
+                  otherDetails.add(details);
+                   
+                  OtherDetailObj totalSiObj = new OtherDetailObj();
+                  totalSiObj.setName("Total SI");
+                  totalSiObj.setValue("USD"+df.format($totalSi));
+                  otherDetails.add(totalSiObj);
+                   
+                  OtherDetailObj prePolicy = new OtherDetailObj();
+                  prePolicy.setName("Previous Policy");
+                  prePolicy.setValue("");
+                  otherDetails.add(prePolicy);
+                   
+                  increment = 0;
+                  
+                  if ($policyList != null){
+                  for (int i=0;i < $policyList.size();i++){
+                      OtherDetailObj policy = new OtherDetailObj();
+                      Policy tempPolicy = (Policy) $policyList.get(i);
+                      if (
+                        Constants.owner.equals(tempPolicy.getCurrentRole()) 
+                        && Constants.insured.equals(tempPolicy.getRole())
+                        && tempPolicy.isInforce(tempPolicy.getPolicyStatus())
+                        && tempPolicy.isValidProduct("WP","SML")
+                      ){
+                        increment++;
+                        policy.setName("(" + increment + ")");
+                        policy.setValue(tempPolicy.getPolicyNo() + ";" + tempPolicy.getProductSeriesConcat() + ";" + tempPolicy.getCurrency() + df.format(tempPolicy.getSumInsured()));
+                        otherDetails.add(policy);
+                      }
+                  }
+                  }
+                  
+                  if ($policyRiderList != null){
+                    for (int i=0;i < $policyRiderList.size();i++){
+                        OtherDetailObj policyRider = new OtherDetailObj();
+                        PolicyRider tempPolicyRider = (PolicyRider) $policyRiderList.get(i);
+                        if (
+                            Constants.owner.equals(tempPolicyRider.getCurrentRole()) 
+                            && Constants.insured.equals(tempPolicyRider.getRole())
+                            && "".equals(tempPolicyRider.getRiderStatus())
+                            && tempPolicyRider.isValidProduct("WP","SML")
+                        ){
+                          increment++;
+                          policyRider.setName("(" + increment + ")");
+                          policyRider.setValue(tempPolicyRider.getPolicyNo() + ";" + tempPolicyRider.getProductSeriesConcat() + ";" + tempPolicyRider.getCurrency() + df.format(tempPolicyRider.getSumInsured()));
+                          otherDetails.add(policyRider);
+                        }
+                    }
+                  }
+                   
+                  OtherDetailObj preApp = new OtherDetailObj();
+                  preApp.setName("Previous Application");
+                  preApp.setValue("");
+                  otherDetails.add(preApp);
+                   
+                  increment = 0;
+                  
+                  if ($applicationList != null){
+                  for (int i=0;i < $applicationList.size();i++){
+                      OtherDetailObj app = new OtherDetailObj();
+                      Application tempApp = (Application) $applicationList.get(i);
+                      if (
+                        Constants.owner.equals(tempApp.getCurrentRole()) 
+                        && Constants.insured.equals(tempApp.getRole())
+                        && tempApp.isActive(tempApp.getApplicationStatus())
+                        && tempApp.isValidProduct("WP")
+                      ){
+                        increment++;
+                        app.setName("(" + increment + ")");
+                        app.setValue(tempApp.getApplicationNo() + ";" + tempApp.getProductSeriesConcat() + ";" + tempApp.getCurrency() + df.format(tempApp.getSumInsured()));
+                        otherDetails.add(app);
+                      }
+                  }
+                  }
+                  
+                  
+                  if ($applicationRiderList != null){
+                  for (int i=0;i < $applicationRiderList.size();i++){
+                      OtherDetailObj appRider = new OtherDetailObj();
+                      ApplicationRider tempAppRider = (ApplicationRider) $applicationRiderList.get(i);
+                      
+                      if (
+                        Constants.owner.equals(tempAppRider.getCurrentRole()) 
+                        && Constants.insured.equals(tempAppRider.getRole())
+                        && tempAppRider.isActive(tempAppRider.getApplicationStatus())
+                        && tempAppRider.isValidProduct("WP")
+                      ){
+                        increment++;
+                        appRider.setName("(" + increment + ")");
+                        appRider.setValue(tempAppRider.getApplicationNo() + ";" + tempAppRider.getProductSeriesConcat() + ";" + tempAppRider.getCurrency() + df.format(tempAppRider.getSumInsured()));
+                        otherDetails.add(appRider);
+                      }
+                  }
+                  }
+                   
+                  failedReasons.add( "Total WP SI exceeds maximum limit USD 1,500,000");
+                   
+                  // ******* Prepare InsuredIndividual *********
+                  $ownerIndividual.setFailedReasons(failedReasons);
+                  $ownerIndividual.setDecision(Constants.failDecision);
+                  $ownerIndividual.setOtherDetails(otherDetails);
+                   
+                  // *******************************************
+                   
+                  $rule45Obj.setOwnerIndividual($ownerIndividual);
+                update($rule45Obj);
+                
+end
+
+rule "Rule_45 final"
+    dialect "java"
+    when
+        Rule45Obj (isOwner == true || isInsured == true, $insuredIndividual : insuredIndividual, $ownerIndividual : ownerIndividual)
+        CurrentApplication ($formId : formId)
+		$processObj : ProcessObject(rule45Processed == false)
+		 $resultObj : Result( $individualResultList : individualResult)
+        $ruleObj : RuleObject( ruleNo == "45" )
+    then
+        $processObj.setRule45Processed(true);
+        IndividualResult $individualResult = new IndividualResult();
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision(Constants.failDecision);
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        
+        if ($insuredIndividual != null)
+            $individualResult.setInsuredIndividual($insuredIndividual);
+            
+        if ($ownerIndividual != null)
+            $individualResult.setOwnerIndividual($ownerIndividual);
+            
+          $individualResultList.add( $individualResult );
+                  update($processObj);
+                  long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+                  Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+                  Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

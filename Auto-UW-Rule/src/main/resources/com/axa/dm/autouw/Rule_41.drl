@@ -1,0 +1,59 @@
+package com.axa.dm.autouw;
+
+rule "Rule_41"
+    dialect "java"
+    when 
+        $processObj : ProcessObject( rule41Processed == false)
+        CurrentApplication(freeTextFlag == true || ($specialField: specialField && $specialField.size()>1))
+        $ruleObj : RuleObject( ruleNo == "41" )
+        $resultObj : Result( $individualResultList : individualResult)
+        CurrentApplication ($formId : formId)
+    then
+        $processObj.setRule41Processed(true);
+        List failedReasons = new ArrayList<String>();
+		List failedApplicationNo = new ArrayList<String>();
+		List otherDetails = new ArrayList<OtherDetailObj>();
+		failedReasons.add("There is special remark for the application.");
+		
+		if ($specialField != null){
+		    for(int i=0;i<$specialField.size();i++){
+		        OtherDetailObj o = new OtherDetailObj();
+		        SpecialField s = (SpecialField) $specialField.get(i);
+                o.setName("Special Remark Field Description");
+                o.setValue(s.getDescription());
+                otherDetails.add(o);
+                
+                OtherDetailObj o2 = new OtherDetailObj();
+                o2.setName("Special Remark");
+                o2.setValue(s.getValue());
+                otherDetails.add(o2);
+		    }
+		}
+		
+        IndividualResult $individualResult = new IndividualResult();
+		
+		OwnerIndividual $ownerIndividual = new OwnerIndividual();
+        $individualResult.setOwnerIndividual($ownerIndividual);
+		
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+		$insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+        $insuredIndividual.setOtherDetails(otherDetails);
+        
+        $ownerIndividual.setFailedReasons(failedReasons);
+		$ownerIndividual.setDecision("Fail");
+        $ownerIndividual.setOtherDetails(otherDetails);
+        
+        $individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResult.setOwnerIndividual($ownerIndividual);
+        $individualResultList.add( $individualResult );
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

@@ -1,0 +1,15 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "ConvertPolicyToHKD"
+	dialect "mvel"
+	when
+		ExchangeRateObject( $fromCurrency : fromCurrency, toCurrency == "HKD" , $exchangeRate : exchangeRate)
+		$policy : Policy( currency == $fromCurrency , $sumInsured : sumInsured, sumInsuredHkd == null , $lumpSum : lumpSum, productType not in ( "ILAS" ) || productType == null )
+	then
+		modify( $policy ) {
+				setSumInsuredHkd( $sumInsured.multiply($exchangeRate) ), 
+				setLumpSumHkd( $lumpSum.multiply($exchangeRate) )
+		}
+end

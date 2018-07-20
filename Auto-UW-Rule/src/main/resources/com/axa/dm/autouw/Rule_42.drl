@@ -1,0 +1,63 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+import java.util.Date;
+
+
+rule "Rule_42_init_object"
+    dialect "java"
+    when
+        not (Rule42Object())
+    then
+        Rule42Object rule42Obj = new Rule42Object();
+        rule42Obj.setBeneficiaryRelationshipList(new ArrayList());
+        insert(rule42Obj);
+    end
+
+rule "Rule_42_extract_data"
+    no-loop true
+    dialect "java"
+    when
+        $rule42Obj : Rule42Object($beneficiaryRelationshipList: beneficiaryRelationshipList)
+        CurrentApplication( $beneficiaryList : beneficiaries != null )
+		(Beneficiary( $beneficiaryRelationship: beneficiaryRelationship !=null, $beneficiaryRelationship.toLowerCase() not in ("parents", "children", "spouse") ) from $beneficiaryList)
+    then
+        $beneficiaryRelationshipList.add($beneficiaryRelationship);
+        update($rule42Obj);
+    end
+        
+
+rule "Rule_42"
+	dialect "java"
+	when
+		$processObj : ProcessObject( rule42Processed == false )
+		$rule42Obj : Rule42Object($beneficiaryRelationshipList: beneficiaryRelationshipList, $beneficiaryRelationshipList.size()>0)
+		$resultObj : Result( $individualResultList : individualResult)
+		$ruleObj : RuleObject( ruleNo == "42" )
+		CurrentApplication ($formId : formId)
+	then
+		$processObj.setRule42Processed( true );
+		List failedReasons = new ArrayList<String>();
+		
+		for(int i=0; i<$beneficiaryRelationshipList.size(); i++){
+		  failedReasons.add("Beneficiary relationship to Proposed Insured is " + $beneficiaryRelationshipList.get(i) + ", which has no perceived insurable interest.");
+		}
+		
+		IndividualResult $individualResult = new IndividualResult();
+		InsuredIndividual $insuredIndividual = new InsuredIndividual();
+		$insuredIndividual.setFailedReasons(failedReasons);
+		$insuredIndividual.setDecision("Fail");
+		
+		$individualResult.setRuleNo($ruleObj.getRuleNo());
+        $individualResult.setDecision("Fail");
+        $individualResult.setRuleName($ruleObj.getRuleName());
+        $individualResult.setMessageToClientEng($ruleObj.getMessageToClientEng());
+        $individualResult.setMessageToClientChi($ruleObj.getMessageToClientChi());
+        $individualResult.setInsuredIndividual($insuredIndividual);
+        $individualResultList.add( $individualResult );
+        
+        update($processObj);
+        long dateDiff = new Date().getTime() - $processObj.getStartTime().getTime();
+        Utils.loggingTime($ruleObj.getRuleNo(),dateDiff);
+        Utils.loggingDebug("Form ID: "+$formId + " | " + $individualResult.toJson());
+end

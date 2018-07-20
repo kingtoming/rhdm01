@@ -1,0 +1,16 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "ConvertApplicationToHKD (ILAS)"
+	dialect "mvel"
+	when
+		ExchangeRateObject( toCurrency == "HKD" , $fromCurrency : fromCurrency, $exchangeRate : exchangeRate)
+		$application : Application( currency == $fromCurrency , $sumInsured : sumInsured, productType in ( "ILAS" ) , $lumpSum : lumpSum, sumInsuredHkd == null , $paymentMode : paymentMode, $regularPremium : regularPremium)
+		PaymentObject( paymentCode == $paymentMode , $multiplier : multiplier)
+	then
+		modify( $application ) {
+				setSumInsuredHkd( $regularPremium.multiply($multiplier).multiply($exchangeRate).add($lumpSum.multiply($exchangeRate).divide(new BigDecimal("10"),8,RoundingMode.HALF_UP)) ), 
+				setLumpSumHkd( $lumpSum.multiply($exchangeRate) )
+		}
+end

@@ -1,0 +1,26 @@
+package com.axa.dm.autouw;
+
+import java.lang.Number;
+
+rule "Rule_1 - case i"
+	dialect "java"
+	when
+		ProcessObject( applicationCount <= 3 )
+		CurrentApplication( $riderList : rider )
+ 		Number ($count : intValue()) from accumulate( Rider() from $riderList, count(1)) 
+ 		Number(intValue() == $count) from accumulate ( Rider( $sumInsuredHkd : sumInsuredHkd != null , $finLimitMultiplier : finLimitMultiplier != null ),
+			count(1))
+		$insured : Insured( nonMedLifeSiHkd == null, nonMedLifeSiUsd == null)
+		ExchangeRateObject( fromCurrency == "HKD" , toCurrency == "USD" , $exchangeRate : exchangeRate)
+		$totalBasicSi : Number( ) from accumulate ( Basic( $sumInsuredHkd : sumInsuredHkd != null , $finLimitMultiplier : finLimitMultiplier != null ),
+			sum($sumInsuredHkd.multiply($finLimitMultiplier))) 
+		$totalRiderSi : Number( ) from accumulate ( Rider( $sumInsuredHkd : sumInsuredHkd != null , $finLimitMultiplier : finLimitMultiplier != null ),
+			sum($sumInsuredHkd.multiply($finLimitMultiplier))) 
+	then
+		BigDecimal totalSiHkd = new BigDecimal($totalBasicSi.toString()).add(new BigDecimal($totalRiderSi.toString()));
+        // System.out.println(totalSiHkd);
+		modify( $insured ) {
+				setNonMedLifeSiHkd( totalSiHkd ), 
+				setNonMedLifeSiUsd( totalSiHkd.multiply($exchangeRate) )
+		}
+end
